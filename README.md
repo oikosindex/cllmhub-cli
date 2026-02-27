@@ -13,17 +13,17 @@ The command-line interface for [cLLMHub](https://github.com/oikosindex/cllmhub) 
 
 ```bash
 # Download (macOS Apple Silicon example)
-curl -fSL https://your-hub-url/downloads/llmhub-darwin-arm64 -o llmhub
-chmod +x llmhub
+curl -fSL https://your-hub-url/downloads/cllmhub-darwin-arm64 -o cllmhub
+chmod +x cllmhub
 
 # Publish a model (requires Ollama or another backend running)
-./llmhub publish --model llama3 --backend ollama --token YOUR_PROVIDER_TOKEN
+./cllmhub publish --model llama3 --backend ollama --token YOUR_PROVIDER_TOKEN
 
 # Ask a question
-./llmhub ask -m llama3 "What is quantum computing?"
+./cllmhub ask -m llama3 "What is quantum computing?"
 
 # Start a chat session
-./llmhub chat -m llama3
+./cllmhub chat -m llama3
 ```
 
 ## Installation
@@ -46,7 +46,7 @@ Requires Go 1.22+.
 git clone https://github.com/oikosindex/cllmhub-cli.git
 cd cllmhub-cli
 make build
-# Binary is at bin/llmhub
+# Binary is at bin/cllmhub
 ```
 
 Cross-compile for all platforms:
@@ -57,7 +57,7 @@ make build-all
 
 ## Commands
 
-### `llmhub publish`
+### `cllmhub publish`
 
 Publish a local model to the hub. Keeps a persistent connection — your model is online as long as the CLI is running.
 
@@ -69,7 +69,7 @@ Flags:
   --hub-url       Hub gateway URL (default: https://cllmhub.com)
 ```
 
-### `llmhub ask`
+### `cllmhub ask`
 
 Send a single prompt and get a response.
 
@@ -82,7 +82,7 @@ Flags:
   --hub-url            Hub gateway URL
 ```
 
-### `llmhub chat`
+### `cllmhub chat`
 
 Interactive chat session. Type `exit` to quit.
 
@@ -92,11 +92,11 @@ Flags:
   --hub-url     Hub gateway URL
 ```
 
-### `llmhub models`
+### `cllmhub models`
 
 List all available models on the hub.
 
-### `llmhub status`
+### `cllmhub status`
 
 Check connectivity to the hub.
 

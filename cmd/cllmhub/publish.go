@@ -28,8 +28,8 @@ advertises the model in the registry, and bridges incoming requests
 to the local inference backend.
 
 Supported backends: ollama, llama.cpp, vllm, custom`,
-	Example: `  llmhub publish --model "llama3-70b" --backend ollama --token <your-token>
-  llmhub publish --model "mixtral-8x7b" --backend vllm --token <your-token> --hub-url https://cllmhub.com`,
+	Example: `  cllmhub publish --model "llama3-70b" --backend ollama --token <your-token>
+  cllmhub publish --model "mixtral-8x7b" --backend vllm --token <your-token> --hub-url https://cllmhub.com`,
 	RunE: runPublish,
 }
 

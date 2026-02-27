@@ -10,7 +10,7 @@ import (
 var hubURL string
 
 var rootCmd = &cobra.Command{
-	Use:   "llmhub",
+	Use:   "cllmhub",
 	Short: "cLLMHub CLI - Turn your local LLM into a production API",
 	Long: `cLLMHub turns your local LLM into a production API.
 Publish models, create tokens, and share access with anyone.`,

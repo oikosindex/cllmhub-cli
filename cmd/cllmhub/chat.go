@@ -17,8 +17,8 @@ var chatCmd = &cobra.Command{
 	Use:   "chat",
 	Short: "Start an interactive chat session with a model",
 	Long:  `Start an interactive chat session with a model on the LLMHub network. Type your messages and receive responses in real-time.`,
-	Example: `  llmhub chat --model llama3-70b
-  llmhub chat -m mixtral-8x7b --hub-url https://cllmhub.com`,
+	Example: `  cllmhub chat --model llama3-70b
+  cllmhub chat -m mixtral-8x7b --hub-url https://cllmhub.com`,
 	RunE: runChat,
 }
 

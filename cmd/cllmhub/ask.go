@@ -20,9 +20,9 @@ var askCmd = &cobra.Command{
 	Use:   "ask [prompt]",
 	Short: "Send a prompt to a model and get a response",
 	Long:  `Send a single prompt to a model on the LLMHub network and receive a completion.`,
-	Example: `  llmhub ask --model llama3-70b "What is NATS messaging?"
-  llmhub ask -m mixtral-8x7b --stream "Explain quantum computing"
-  llmhub ask -m llama3 --hub-url https://cllmhub.com "Hello"`,
+	Example: `  cllmhub ask --model llama3-70b "What is NATS messaging?"
+  cllmhub ask -m mixtral-8x7b --stream "Explain quantum computing"
+  cllmhub ask -m llama3 --hub-url https://cllmhub.com "Hello"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runAsk,
 }
