@@ -24,6 +24,7 @@ func init() {
 	rootCmd.AddCommand(askCmd)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(modelsCmd)
+	rootCmd.AddCommand(updateCmd)
 }
 
 func main() {
