@@ -12,18 +12,17 @@ The command-line interface for [cLLMHub](https://github.com/oikosindex/cllmhub) 
 ## Quick start
 
 ```bash
-# Download (macOS Apple Silicon example)
-curl -fSL https://your-hub-url/downloads/cllmhub-darwin-arm64 -o cllmhub
-chmod +x cllmhub
+# Install
+curl -fsSL https://raw.githubusercontent.com/oikosindex/cllmhub-cli/main/install.sh | sh
 
 # Publish a model (requires Ollama or another backend running)
-./cllmhub publish --model llama3 --backend ollama --token YOUR_PROVIDER_TOKEN
+cllmhub publish --model llama3 --backend ollama --token YOUR_PROVIDER_TOKEN
 
 # Ask a question
-./cllmhub ask -m llama3 "What is quantum computing?"
+cllmhub ask -m llama3 "What is quantum computing?"
 
 # Start a chat session
-./cllmhub chat -m llama3
+cllmhub chat -m llama3
 ```
 
 ## Installation
