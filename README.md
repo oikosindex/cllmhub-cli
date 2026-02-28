@@ -56,6 +56,7 @@ Publish a local model to the hub. Keeps a persistent connection — your model i
 Flags:
   --model,   -m   Model name to publish (required)
   --backend, -b   Backend type: ollama | vllm | llamacpp | custom (default: ollama)
+  --backend-url   Backend endpoint URL (overrides default for the backend type)
   --token,   -t   Provider token from your dashboard (required)
   --hub-url       Hub gateway URL (default: https://cllmhub.com)
 ```
