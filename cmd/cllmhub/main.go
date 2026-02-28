@@ -20,10 +20,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&hubURL, "hub-url", "https://cllmhub.com", "LLMHub gateway URL")
 
 	rootCmd.AddCommand(publishCmd)
-	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(askCmd)
-	rootCmd.AddCommand(chatCmd)
-	rootCmd.AddCommand(modelsCmd)
 	rootCmd.AddCommand(updateCmd)
 }
 

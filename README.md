@@ -5,9 +5,7 @@ The command-line interface for [cLLMHub](https://github.com/oikosindex/cllmhub) 
 ## What it does
 
 - **Publish** models from your machine to the hub so anyone with an API key can use them
-- **Ask** a single question and get a response
-- **Chat** interactively with any model on the hub
-- **List** all available models
+- **Update** the CLI to the latest version
 
 ## Quick start
 
@@ -17,12 +15,6 @@ curl -fsSL https://raw.githubusercontent.com/oikosindex/cllmhub-cli/main/install
 
 # Publish a model (requires Ollama or another backend running)
 cllmhub publish --model llama3 --backend ollama --token YOUR_PROVIDER_TOKEN
-
-# Ask a question
-cllmhub ask -m llama3 "What is quantum computing?"
-
-# Start a chat session
-cllmhub chat -m llama3
 ```
 
 ## Installation
@@ -68,36 +60,9 @@ Flags:
   --hub-url       Hub gateway URL (default: https://cllmhub.com)
 ```
 
-### `cllmhub ask`
+### `cllmhub update`
 
-Send a single prompt and get a response.
-
-```
-Flags:
-  --model,       -m   Model to query (required)
-  --temperature, -t   Sampling temperature (default: 0.7)
-  --max-tokens        Max response tokens (default: 512)
-  --stream,      -s   Stream tokens as they arrive
-  --hub-url            Hub gateway URL
-```
-
-### `cllmhub chat`
-
-Interactive chat session. Type `exit` to quit.
-
-```
-Flags:
-  --model, -m   Model to chat with (required)
-  --hub-url     Hub gateway URL
-```
-
-### `cllmhub models`
-
-List all available models on the hub.
-
-### `cllmhub status`
-
-Check connectivity to the hub.
+Update the CLI to the latest version.
 
 ## Supported backends
 
