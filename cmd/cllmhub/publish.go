@@ -15,6 +15,7 @@ import (
 var (
 	publishModel         string
 	publishBackend       string
+	publishBackendURL    string
 	publishDescription   string
 	publishMaxConcurrent int
 	publishToken         string
@@ -36,6 +37,7 @@ Supported backends: ollama, llama.cpp, vllm, custom`,
 func init() {
 	publishCmd.Flags().StringVarP(&publishModel, "model", "m", "", "Model name to publish (required)")
 	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, custom")
+	publishCmd.Flags().StringVar(&publishBackendURL, "backend-url", "", "Backend endpoint URL (overrides default for the backend type)")
 	publishCmd.Flags().StringVarP(&publishDescription, "description", "d", "", "Model description")
 	publishCmd.Flags().IntVarP(&publishMaxConcurrent, "max-concurrent", "c", 1, "Maximum concurrent requests")
 	publishCmd.Flags().StringVarP(&publishToken, "token", "t", "", "Provider token from the LLMHub dashboard (required)")
@@ -59,6 +61,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		Token:         publishToken,
 		Backend: backend.Config{
 			Type:  publishBackend,
+			URL:   publishBackendURL,
 			Model: publishModel,
 		},
 		HubURL: hubURL,
