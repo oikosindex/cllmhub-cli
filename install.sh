@@ -3,7 +3,7 @@ set -e
 
 REPO="oikosindex/cllmhub-cli"
 BINARY="cllmhub"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${HOME}/.cllmhub/bin"
 
 main() {
     os=$(detect_os)
@@ -11,18 +11,31 @@ main() {
 
     echo "Detected platform: ${os}/${arch}"
 
+    mkdir -p "$INSTALL_DIR"
+
     # Try go install first
     if command -v go >/dev/null 2>&1; then
         echo "Go found, installing via go install..."
-        go install "github.com/${REPO}/cmd/${BINARY}@latest"
-        echo ""
-        echo "Installed ${BINARY} to $(go env GOPATH)/bin/${BINARY}"
-        echo "Make sure $(go env GOPATH)/bin is in your PATH."
-        exit 0
+        GOBIN="$INSTALL_DIR" go install "github.com/${REPO}/cmd/${BINARY}@latest"
+    else
+        # Fall back to pre-built binary
+        echo "Downloading pre-built binary..."
+        download_binary "$os" "$arch"
     fi
 
-    # Fall back to pre-built binary
-    echo "Go not found, downloading pre-built binary..."
+    setup_path
+    echo ""
+    echo "cllmhub installed successfully!"
+    echo ""
+    echo "Run 'cllmhub --help' to get started."
+    echo ""
+    echo "If the command is not found, restart your terminal or run:"
+    echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+}
+
+download_binary() {
+    os=$1
+    arch=$2
 
     version=$(get_latest_version)
     if [ -z "$version" ]; then
@@ -51,19 +64,61 @@ main() {
     fi
 
     chmod +x "$tmpfile"
+    mv "$tmpfile" "${INSTALL_DIR}/${BINARY}"
+    rm -rf "$tmpdir"
+}
 
-    # Install to INSTALL_DIR, use sudo if needed
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "$tmpfile" "${INSTALL_DIR}/${BINARY}"
-    else
-        echo "Installing to ${INSTALL_DIR} (requires sudo)..."
-        sudo mv "$tmpfile" "${INSTALL_DIR}/${BINARY}"
+setup_path() {
+    path_entry="export PATH=\"${INSTALL_DIR}:\$PATH\""
+
+    # Already in PATH, nothing to do
+    case ":${PATH}:" in
+        *":${INSTALL_DIR}:"*) return ;;
+    esac
+
+    # Detect shell profile
+    profiles=""
+    case "$(basename "${SHELL:-}")" in
+        zsh)  profiles="$HOME/.zshrc" ;;
+        bash)
+            if [ -f "$HOME/.bash_profile" ]; then
+                profiles="$HOME/.bash_profile"
+            else
+                profiles="$HOME/.bashrc"
+            fi
+            ;;
+        fish) ;;
+        *)
+            if [ -f "$HOME/.profile" ]; then
+                profiles="$HOME/.profile"
+            fi
+            ;;
+    esac
+
+    # Handle fish separately
+    if [ "$(basename "${SHELL:-}")" = "fish" ]; then
+        fish_conf_dir="${HOME}/.config/fish/conf.d"
+        mkdir -p "$fish_conf_dir"
+        fish_file="${fish_conf_dir}/cllmhub.fish"
+        if [ ! -f "$fish_file" ] || ! grep -q "$INSTALL_DIR" "$fish_file" 2>/dev/null; then
+            echo "set -gx PATH ${INSTALL_DIR} \$PATH" > "$fish_file"
+            echo "Added ${INSTALL_DIR} to PATH in ${fish_file}"
+        fi
+        return
     fi
 
-    rm -rf "$tmpdir"
-
-    echo ""
-    echo "${BINARY} ${version} installed to ${INSTALL_DIR}/${BINARY}"
+    # Add to shell profile(s)
+    for profile in $profiles; do
+        if [ -f "$profile" ]; then
+            if grep -q "$INSTALL_DIR" "$profile" 2>/dev/null; then
+                continue
+            fi
+        fi
+        echo "" >> "$profile"
+        echo "# cLLMHub CLI" >> "$profile"
+        echo "$path_entry" >> "$profile"
+        echo "Added ${INSTALL_DIR} to PATH in ${profile}"
+    done
 }
 
 detect_os() {
