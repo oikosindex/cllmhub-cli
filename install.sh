@@ -13,15 +13,8 @@ main() {
 
     mkdir -p "$INSTALL_DIR"
 
-    # Try go install first
-    if command -v go >/dev/null 2>&1; then
-        echo "Go found, installing via go install..."
-        GOBIN="$INSTALL_DIR" go install "github.com/${REPO}/cmd/${BINARY}@latest"
-    else
-        # Fall back to pre-built binary
-        echo "Downloading pre-built binary..."
-        download_binary "$os" "$arch"
-    fi
+    echo "Downloading pre-built binary..."
+    download_binary "$os" "$arch"
 
     setup_path
     echo ""
