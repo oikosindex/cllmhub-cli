@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 )
 
 // Backend defines the interface for LLM inference backends
@@ -41,6 +43,29 @@ type Config struct {
 	URL      string
 	Model    string
 	APIKey   string // for custom backends that need auth
+}
+
+// CheckInsecureAPIKey returns an error if an API key is being sent over
+// plain HTTP to a non-localhost host.
+func CheckInsecureAPIKey(rawURL, apiKey string) error {
+	if apiKey == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	if u.Scheme != "http" {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("refusing to send API key over plain HTTP to remote host %q; use HTTPS or remove the API key", host)
 }
 
 // New creates a backend based on the config type

@@ -1,11 +1,12 @@
 module github.com/oikosindex/cllmhub-cli
 
-go 1.22
+go 1.24.0
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.8.0
+	golang.org/x/time v0.14.0
 )
 
 require (

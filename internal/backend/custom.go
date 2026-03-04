@@ -40,6 +40,10 @@ func NewCustom(cfg Config) (*Custom, error) {
 		return nil, fmt.Errorf("custom backend requires a URL")
 	}
 
+	if err := CheckInsecureAPIKey(cfg.URL, cfg.APIKey); err != nil {
+		return nil, err
+	}
+
 	return &Custom{
 		url:    cfg.URL,
 		apiKey: cfg.APIKey,

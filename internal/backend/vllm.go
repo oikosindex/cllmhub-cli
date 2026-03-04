@@ -29,6 +29,10 @@ func NewVLLM(cfg Config) (*VLLM, error) {
 		url = defaultVLLMURL
 	}
 
+	if err := CheckInsecureAPIKey(url, cfg.APIKey); err != nil {
+		return nil, err
+	}
+
 	return &VLLM{
 		url:    url,
 		model:  cfg.Model,

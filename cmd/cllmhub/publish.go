@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
+	"github.com/oikosindex/cllmhub-cli/internal/auth"
 	"github.com/oikosindex/cllmhub-cli/internal/backend"
 	"github.com/oikosindex/cllmhub-cli/internal/provider"
 	"github.com/spf13/cobra"
@@ -18,7 +20,8 @@ var (
 	publishBackendURL    string
 	publishDescription   string
 	publishMaxConcurrent int
-	publishToken         string
+	publishLogFile       string
+	publishRateLimit     int
 )
 
 var publishCmd = &cobra.Command{
@@ -29,8 +32,8 @@ advertises the model in the registry, and bridges incoming requests
 to the local inference backend.
 
 Supported backends: ollama, llama.cpp, vllm, custom`,
-	Example: `  cllmhub publish --model "llama3-70b" --backend ollama --token <your-token>
-  cllmhub publish --model "mixtral-8x7b" --backend vllm --token <your-token> --hub-url https://cllmhub.com`,
+	Example: `  cllmhub publish --model "llama3-70b" --backend ollama
+  cllmhub publish --model "mixtral-8x7b" --backend vllm --hub-url https://cllmhub.com`,
 	RunE: runPublish,
 }
 
@@ -40,13 +43,25 @@ func init() {
 	publishCmd.Flags().StringVar(&publishBackendURL, "backend-url", "", "Backend endpoint URL (overrides default for the backend type)")
 	publishCmd.Flags().StringVarP(&publishDescription, "description", "d", "", "Model description")
 	publishCmd.Flags().IntVarP(&publishMaxConcurrent, "max-concurrent", "c", 1, "Maximum concurrent requests")
-	publishCmd.Flags().StringVarP(&publishToken, "token", "t", "", "Provider token from the LLMHub dashboard (required)")
+	publishCmd.Flags().StringVar(&publishLogFile, "log-file", "", "Path to audit log file (JSON lines)")
+	publishCmd.Flags().IntVar(&publishRateLimit, "rate-limit", 0, "Max requests per minute (0 = unlimited)")
 
 	publishCmd.MarkFlagRequired("model")
-	publishCmd.MarkFlagRequired("token")
 }
 
 func runPublish(cmd *cobra.Command, args []string) error {
+	token, tokenMgr, err := auth.ResolveTokenManager(hubURL)
+	if err != nil {
+		return err
+	}
+
+	if !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(publishModel) {
+		return fmt.Errorf("invalid model name %q: only alphanumerics, dots, underscores, colons, slashes, and hyphens are allowed", publishModel)
+	}
+	if len(publishDescription) > 500 {
+		return fmt.Errorf("description too long (%d chars): maximum is 500", len(publishDescription))
+	}
+
 	fmt.Printf("Publishing model %q with backend %s\n", publishModel, publishBackend)
 	fmt.Printf("  Hub:   %s\n", hubURL)
 	if publishDescription != "" {
@@ -58,13 +73,16 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		Model:         publishModel,
 		Description:   publishDescription,
 		MaxConcurrent: publishMaxConcurrent,
-		Token:         publishToken,
+		Token:         token,
 		Backend: backend.Config{
 			Type:  publishBackend,
 			URL:   publishBackendURL,
 			Model: publishModel,
 		},
-		HubURL: hubURL,
+		HubURL:       hubURL,
+		LogFile:      publishLogFile,
+		RateLimit:    publishRateLimit,
+		TokenManager: tokenMgr,
 	}
 
 	p, err := provider.New(cfg)

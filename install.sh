@@ -98,11 +98,21 @@ setup_path() {
     # Handle fish separately
     if [ "$(basename "${SHELL:-}")" = "fish" ]; then
         fish_conf_dir="${HOME}/.config/fish/conf.d"
-        mkdir -p "$fish_conf_dir"
         fish_file="${fish_conf_dir}/cllmhub.fish"
         if [ ! -f "$fish_file" ] || ! grep -q "$INSTALL_DIR" "$fish_file" 2>/dev/null; then
-            echo "set -gx PATH ${INSTALL_DIR} \$PATH" > "$fish_file"
-            echo "Added ${INSTALL_DIR} to PATH in ${fish_file}"
+            printf "Add cllmhub to PATH in %s? [Y/n] " "$fish_file"
+            read -r answer < /dev/tty || answer=""
+            case "$answer" in
+                [nN]*)
+                    echo "Skipped. To add manually:"
+                    echo "  echo 'set -gx PATH ${INSTALL_DIR} \$PATH' >> ${fish_file}"
+                    ;;
+                *)
+                    mkdir -p "$fish_conf_dir"
+                    echo "set -gx PATH ${INSTALL_DIR} \$PATH" > "$fish_file"
+                    echo "Added ${INSTALL_DIR} to PATH in ${fish_file}"
+                    ;;
+            esac
         fi
         return
     fi
@@ -114,10 +124,20 @@ setup_path() {
                 continue
             fi
         fi
-        echo "" >> "$profile"
-        echo "# cLLMHub CLI" >> "$profile"
-        echo "$path_entry" >> "$profile"
-        echo "Added ${INSTALL_DIR} to PATH in ${profile}"
+        printf "Add cllmhub to PATH in %s? [Y/n] " "$profile"
+        read -r answer < /dev/tty || answer=""
+        case "$answer" in
+            [nN]*)
+                echo "Skipped. To add manually:"
+                echo "  echo '${path_entry}' >> ${profile}"
+                ;;
+            *)
+                echo "" >> "$profile"
+                echo "# cLLMHub CLI" >> "$profile"
+                echo "$path_entry" >> "$profile"
+                echo "Added ${INSTALL_DIR} to PATH in ${profile}"
+                ;;
+        esac
     done
 }
 

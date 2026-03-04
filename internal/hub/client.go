@@ -2,15 +2,25 @@ package hub
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// pinnedSPKIHash is the SHA-256 of the leaf certificate's Subject Public Key Info
+// for cllmhub.com. Update this when the certificate is rotated.
+// TODO: Replace with actual production certificate fingerprint.
+const pinnedSPKIHash = "PLACEHOLDER:replace-with-actual-sha256-of-spki"
 
 // WebSocket message types (must match gateway/internal/provider/messages.go)
 const (
@@ -98,7 +108,8 @@ func Connect(cfg ConnectConfig) (*HubClient, error) {
 	}
 	u.Path = "/provider/ws"
 
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	dialer := dialerForHost(u.Hostname())
+	ws, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to hub: %w", err)
 	}
@@ -244,12 +255,21 @@ func (c *HubClient) SendError(requestID, message string) error {
 
 // SendHeartbeat sends a heartbeat to the gateway.
 func (c *HubClient) SendHeartbeat(queueDepth int, gpuUtil float64) error {
+	return c.SendHeartbeatWithToken(queueDepth, gpuUtil, "")
+}
+
+// SendHeartbeatWithToken sends a heartbeat that includes a fresh access token.
+// When token is non-empty, the gateway uses it to update the session credential.
+func (c *HubClient) SendHeartbeatWithToken(queueDepth int, gpuUtil float64, token string) error {
 	msg := map[string]interface{}{
 		"type":        MsgTypeHeartbeat,
 		"provider_id": c.providerID,
 		"model":       c.model,
 		"queue_depth": queueDepth,
 		"gpu_util":    gpuUtil,
+	}
+	if token != "" {
+		msg["token"] = token
 	}
 	return c.writeJSON(msg)
 }
@@ -266,4 +286,35 @@ func (c *HubClient) writeJSON(v interface{}) error {
 	defer c.wsMu.Unlock()
 	c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return c.ws.WriteJSON(v)
+}
+
+// dialerForHost returns a websocket dialer with TLS certificate pinning for
+// cllmhub.com, or the default dialer for any other host (dev/test).
+func dialerForHost(host string) *websocket.Dialer {
+	if host != "cllmhub.com" {
+		return websocket.DefaultDialer
+	}
+	return &websocket.Dialer{
+		HandshakeTimeout: 15 * time.Second,
+		NetDialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+		}).DialContext,
+		TLSClientConfig: &tls.Config{
+			VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no certificates presented")
+				}
+				cert, err := x509.ParseCertificate(rawCerts[0])
+				if err != nil {
+					return fmt.Errorf("failed to parse leaf certificate: %w", err)
+				}
+				spkiHash := fmt.Sprintf("%x", sha256.Sum256(cert.RawSubjectPublicKeyInfo))
+				if spkiHash != pinnedSPKIHash {
+					return fmt.Errorf("TLS certificate pin mismatch for cllmhub.com")
+				}
+				return nil
+			},
+		},
+		Proxy: http.ProxyFromEnvironment,
+	}
 }

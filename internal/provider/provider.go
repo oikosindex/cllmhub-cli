@@ -3,12 +3,16 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oikosindex/cllmhub-cli/internal/audit"
+	"github.com/oikosindex/cllmhub-cli/internal/auth"
 	"github.com/oikosindex/cllmhub-cli/internal/backend"
 	"github.com/oikosindex/cllmhub-cli/internal/hub"
+	"golang.org/x/time/rate"
 )
 
 // Provider manages the lifecycle of a published model
@@ -26,6 +30,10 @@ type Provider struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	audit    *audit.Logger
+	limiter  *rate.Limiter
+	tokenMgr *auth.TokenManager
 }
 
 // Config holds provider configuration
@@ -36,6 +44,9 @@ type Config struct {
 	Token         string
 	Backend       backend.Config
 	HubURL        string
+	LogFile       string
+	RateLimit     int // requests per minute, 0 = unlimited
+	TokenManager  *auth.TokenManager
 }
 
 // New creates a new provider instance
@@ -74,14 +85,33 @@ func New(cfg Config) (*Provider, error) {
 		return nil, fmt.Errorf("failed to connect to hub: %w", err)
 	}
 
-	return &Provider{
+	p := &Provider{
 		id:          providerID,
 		model:       cfg.Model,
 		description: cfg.Description,
 		backend:     b,
 		hub:         hubClient,
 		startTime:   time.Now(),
-	}, nil
+		tokenMgr:    cfg.TokenManager,
+	}
+
+	// Set up audit logger
+	if cfg.LogFile != "" {
+		logger, err := audit.NewLogger(cfg.LogFile)
+		if err != nil {
+			hubClient.Close()
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		p.audit = logger
+	}
+
+	// Set up rate limiter
+	if cfg.RateLimit > 0 {
+		rps := float64(cfg.RateLimit) / 60.0
+		p.limiter = rate.NewLimiter(rate.Limit(rps), cfg.RateLimit)
+	}
+
+	return p, nil
 }
 
 // Start begins listening for inference requests
@@ -107,10 +137,26 @@ func (p *Provider) Stop() {
 	if p.hub != nil {
 		p.hub.Close()
 	}
+	if p.tokenMgr != nil {
+		p.tokenMgr.Stop()
+	}
+	p.audit.Close()
 }
 
 // handleRequest processes incoming inference requests from the hub
 func (p *Provider) handleRequest(req hub.RequestMsg) {
+	// Rate limit check
+	if p.limiter != nil && !p.limiter.Allow() {
+		p.hub.SendError(req.RequestID, "rate limit exceeded")
+		p.audit.Log(audit.Entry{
+			RequestID: req.RequestID,
+			Model:     req.Model,
+			Stream:    req.Params.Stream,
+			Error:     "rate limit exceeded",
+		})
+		return
+	}
+
 	p.mu.Lock()
 	p.queueDepth++
 	p.mu.Unlock()
@@ -137,10 +183,24 @@ func (p *Provider) handleRequest(req hub.RequestMsg) {
 	}
 }
 
+// sanitizeError logs the full error locally and returns a generic message for the hub.
+func sanitizeError(requestID string, err error) string {
+	log.Printf("[%s] backend error: %v", requestID, err)
+	return "internal backend error"
+}
+
 func (p *Provider) handleNonStreamingRequest(req hub.RequestMsg, backendReq *backend.Request, start time.Time) {
 	resp, err := p.backend.Complete(p.ctx, backendReq)
 	if err != nil {
-		p.hub.SendError(req.RequestID, fmt.Sprintf("inference failed: %v", err))
+		msg := sanitizeError(req.RequestID, err)
+		p.hub.SendError(req.RequestID, msg)
+		p.audit.Log(audit.Entry{
+			RequestID: req.RequestID,
+			Model:     req.Model,
+			Stream:    false,
+			LatencyMs: time.Since(start).Milliseconds(),
+			Error:     msg,
+		})
 		return
 	}
 
@@ -152,7 +212,15 @@ func (p *Provider) handleNonStreamingRequest(req hub.RequestMsg, backendReq *bac
 		TotalTokens:      resp.PromptTokens + resp.CompletionTokens,
 	})
 
-	p.recordRequest(resp.PromptTokens + resp.CompletionTokens)
+	tokens := resp.PromptTokens + resp.CompletionTokens
+	p.recordRequest(tokens)
+	p.audit.Log(audit.Entry{
+		RequestID: req.RequestID,
+		Model:     req.Model,
+		Stream:    false,
+		LatencyMs: latency,
+		Tokens:    tokens,
+	})
 }
 
 func (p *Provider) handleStreamingRequest(req hub.RequestMsg, backendReq *backend.Request, start time.Time) {
@@ -165,7 +233,15 @@ func (p *Provider) handleStreamingRequest(req hub.RequestMsg, backendReq *backen
 	})
 
 	if err != nil {
-		p.hub.SendError(req.RequestID, fmt.Sprintf("streaming failed: %v", err))
+		msg := sanitizeError(req.RequestID, err)
+		p.hub.SendError(req.RequestID, msg)
+		p.audit.Log(audit.Entry{
+			RequestID: req.RequestID,
+			Model:     req.Model,
+			Stream:    true,
+			LatencyMs: time.Since(start).Milliseconds(),
+			Error:     msg,
+		})
 		return
 	}
 
@@ -177,7 +253,16 @@ func (p *Provider) handleStreamingRequest(req hub.RequestMsg, backendReq *backen
 	}
 	p.hub.SendStreamToken(req.RequestID, "", tokenIndex, true, resp.Text, usage)
 
-	p.recordRequest(resp.PromptTokens + resp.CompletionTokens)
+	tokens := resp.PromptTokens + resp.CompletionTokens
+	latency := time.Since(start).Milliseconds()
+	p.recordRequest(tokens)
+	p.audit.Log(audit.Entry{
+		RequestID: req.RequestID,
+		Model:     req.Model,
+		Stream:    true,
+		LatencyMs: latency,
+		Tokens:    tokens,
+	})
 }
 
 func (p *Provider) recordRequest(tokens int) {
@@ -209,7 +294,11 @@ func (p *Provider) sendHeartbeat() {
 	queueDepth := p.queueDepth
 	p.mu.Unlock()
 
-	p.hub.SendHeartbeat(queueDepth, 0)
+	var token string
+	if p.tokenMgr != nil {
+		token = p.tokenMgr.AccessToken()
+	}
+	p.hub.SendHeartbeatWithToken(queueDepth, 0, token)
 }
 
 // Status returns the current provider status

@@ -1,4 +1,6 @@
 bin/
+cllmhub
 *.exe
 .DS_Store
 .claude/
+docs/

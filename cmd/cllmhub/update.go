@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -89,6 +93,12 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	tmpFile.Close()
 
+	// Verify checksum
+	fmt.Println("Verifying checksum...")
+	if err := verifyChecksum(version, filename, tmpFile.Name()); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
+	}
+
 	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
 		return fmt.Errorf("chmod failed: %w", err)
 	}
@@ -124,4 +134,54 @@ func getLatestVersion() (string, error) {
 	}
 
 	return release.TagName, nil
+}
+
+// verifyChecksum downloads checksums.txt from the release and verifies the
+// SHA-256 of the downloaded file matches the expected value.
+func verifyChecksum(version, filename, filepath string) error {
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", repo, version)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download checksums: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("checksums not available (HTTP %d); skipping verification", resp.StatusCode)
+	}
+
+	// Parse checksums.txt (format: "<hash>  <filename>" per line)
+	var expected string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) == 2 && parts[1] == filename {
+			expected = parts[0]
+			break
+		}
+	}
+	if expected == "" {
+		return fmt.Errorf("no checksum found for %s", filename)
+	}
+
+	// Compute actual SHA-256
+	f, err := os.Open(filepath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+
+	if actual != expected {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actual)
+	}
+
+	fmt.Println("Checksum verified.")
+	return nil
 }
