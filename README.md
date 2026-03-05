@@ -4,7 +4,10 @@ The command-line interface for [cLLMHub](https://github.com/cllmhub/cllmhub) —
 
 ## What it does
 
+- **Login** to your cLLMHub account via OAuth device flow
 - **Publish** models from your machine to the hub so anyone with an API key can use them
+- **Whoami** to see the currently logged-in user
+- **Logout** to revoke credentials
 - **Update** the CLI to the latest version
 
 ## Quick start
@@ -51,6 +54,21 @@ make build-all
 
 ## Commands
 
+### `cllmhub login`
+
+Authenticate with cLLMHub using OAuth 2.0 device flow. Opens a browser to complete authorization.
+
+```
+Flags:
+  --hub-url   Hub gateway URL (default: https://cllmhub.com)
+```
+
+The hub URL is saved after login so all subsequent commands use it automatically.
+
+### `cllmhub whoami`
+
+Show the currently logged-in user.
+
 ### `cllmhub publish`
 
 Publish a local model to the hub. Keeps a persistent connection — your model is online as long as the CLI is running.
@@ -60,8 +78,12 @@ Flags:
   --model,   -m   Model name to publish (required)
   --backend, -b   Backend type: ollama | vllm | llamacpp | custom (default: ollama)
   --backend-url   Backend endpoint URL (overrides default for the backend type)
-  --hub-url       Hub gateway URL (default: https://cllmhub.com)
+  --hub-url       Hub gateway URL (default: saved from login, or https://cllmhub.com)
 ```
+
+### `cllmhub logout`
+
+Revoke credentials on the server and remove the local credentials file.
 
 ### `cllmhub update`
 
