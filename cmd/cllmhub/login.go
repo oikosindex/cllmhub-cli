@@ -60,6 +60,16 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	fmt.Println("\nAuthenticated successfully! You can now run 'cllmhub publish' without --token.")
+	fmt.Println("\nAuthenticated successfully!")
+	fmt.Println()
+	fmt.Println("Next steps — publish a model to the cLLMHub network:")
+	fmt.Println()
+	fmt.Println("  1. Make sure your inference backend is running (e.g. Ollama, vLLM)")
+	fmt.Println("  2. Run:")
+	fmt.Println()
+	fmt.Println("       cllmhub publish --model <model-name> --backend ollama")
+	fmt.Println()
+	fmt.Println("     This keeps a long-running process that bridges requests from the")
+	fmt.Println("     network to your local backend. Press Ctrl+C to stop publishing.")
 	return nil
 }
