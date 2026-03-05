@@ -56,7 +56,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	}
 
 	expiresAt := time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
-	if err := auth.SaveOAuthCredentials(tr.AccessToken, tr.RefreshToken, tr.TokenType, expiresAt); err != nil {
+	if err := auth.SaveOAuthCredentials(hubURL, tr.AccessToken, tr.RefreshToken, tr.TokenType, expiresAt); err != nil {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 

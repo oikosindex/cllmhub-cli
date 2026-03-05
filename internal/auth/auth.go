@@ -21,6 +21,7 @@ type credentials struct {
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 	TokenType    string    `json:"token_type,omitempty"`
+	HubURL       string    `json:"hub_url,omitempty"`
 }
 
 func credentialsPath() (string, error) {
@@ -44,13 +45,23 @@ func ensureCredentialsDir() (string, error) {
 }
 
 // SaveOAuthCredentials stores OAuth tokens in ~/.cllmhub/credentials.
-func SaveOAuthCredentials(accessToken, refreshToken, tokenType string, expiresAt time.Time) error {
+func SaveOAuthCredentials(hubURL, accessToken, refreshToken, tokenType string, expiresAt time.Time) error {
 	return SaveCredentials(credentials{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    tokenType,
 		ExpiresAt:    expiresAt,
+		HubURL:       hubURL,
 	})
+}
+
+// LoadHubURL returns the hub URL stored in credentials, or empty string if not set.
+func LoadHubURL() string {
+	creds, err := LoadCredentials()
+	if err != nil {
+		return ""
+	}
+	return creds.HubURL
 }
 
 // SaveCredentials writes the credentials struct to disk.
@@ -212,7 +223,7 @@ func (tm *TokenManager) refreshLoop() {
 		tm.mu.Unlock()
 
 		// Persist to disk
-		if err := SaveOAuthCredentials(resp.AccessToken, resp.RefreshToken, resp.TokenType, expiresAt); err != nil {
+		if err := SaveOAuthCredentials(tm.hubURL, resp.AccessToken, resp.RefreshToken, resp.TokenType, expiresAt); err != nil {
 			log.Printf("failed to save refreshed credentials: %v", err)
 		}
 	}

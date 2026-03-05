@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cllmhub/cllmhub-cli/internal/auth"
 	"github.com/spf13/cobra"
 )
 
@@ -21,12 +22,19 @@ Publish models, create tokens, and share access with anyone.`,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&hubURL, "hub-url", "https://cllmhub.com", "LLMHub gateway URL")
+	defaultHubURL := "https://cllmhub.com"
+	if saved := auth.LoadHubURL(); saved != "" {
+		defaultHubURL = saved
+	}
+	rootCmd.PersistentFlags().StringVar(&hubURL, "hub-url", defaultHubURL, "LLMHub gateway URL")
+
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.AddCommand(publishCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
+	rootCmd.AddCommand(whoamiCmd)
 }
 
 func main() {

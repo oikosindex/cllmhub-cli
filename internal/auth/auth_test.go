@@ -49,7 +49,7 @@ func TestSaveOAuthCredentials(t *testing.T) {
 	setupTestHome(t)
 
 	expiresAt := time.Now().Add(time.Hour).Truncate(time.Second)
-	if err := SaveOAuthCredentials("at_123", "rt_456", "Bearer", expiresAt); err != nil {
+	if err := SaveOAuthCredentials("http://localhost", "at_123", "rt_456", "Bearer", expiresAt); err != nil {
 		t.Fatalf("SaveOAuthCredentials: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestResolveTokenManager_NoCredentials(t *testing.T) {
 func TestResolveTokenManager_ValidOAuth(t *testing.T) {
 	setupTestHome(t)
 
-	SaveOAuthCredentials("at_valid", "rt_valid", "Bearer", time.Now().Add(time.Hour))
+	SaveOAuthCredentials("http://localhost", "at_valid", "rt_valid", "Bearer", time.Now().Add(time.Hour))
 
 	tok, tm, err := ResolveTokenManager("http://localhost")
 	if err != nil {
@@ -196,7 +196,7 @@ func TestResolveTokenManager_ExpiredWithRefresh(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	SaveOAuthCredentials("at_expired", "rt_old", "Bearer", time.Now().Add(-time.Hour))
+	SaveOAuthCredentials(srv.URL, "at_expired", "rt_old", "Bearer", time.Now().Add(-time.Hour))
 
 	tok, tm, err := ResolveTokenManager(srv.URL)
 	if err != nil {
