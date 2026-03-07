@@ -22,6 +22,7 @@ type Provider struct {
 	description string
 	backend     backend.Backend
 	hub         *hub.HubClient
+	hubCfg      hub.ConnectConfig
 
 	mu           sync.Mutex
 	requestCount int64
@@ -71,8 +72,7 @@ func New(cfg Config) (*Provider, error) {
 		maxConcurrent = 1
 	}
 
-	// Connect to hub via WebSocket
-	hubClient, err := hub.Connect(hub.ConnectConfig{
+	hubCfg := hub.ConnectConfig{
 		HubURL:        cfg.HubURL,
 		ProviderID:    providerID,
 		Model:         cfg.Model,
@@ -80,7 +80,10 @@ func New(cfg Config) (*Provider, error) {
 		Description:   cfg.Description,
 		MaxConcurrent: maxConcurrent,
 		Token:         cfg.Token,
-	})
+	}
+
+	// Connect to hub via WebSocket
+	hubClient, err := hub.Connect(hubCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to hub: %w", err)
 	}
@@ -91,6 +94,7 @@ func New(cfg Config) (*Provider, error) {
 		description: cfg.Description,
 		backend:     b,
 		hub:         hubClient,
+		hubCfg:      hubCfg,
 		startTime:   time.Now(),
 		tokenMgr:    cfg.TokenManager,
 	}
@@ -114,7 +118,8 @@ func New(cfg Config) (*Provider, error) {
 	return p, nil
 }
 
-// Start begins listening for inference requests
+// Start begins listening for inference requests.
+// If the WebSocket connection drops, it automatically reconnects once per minute.
 func (p *Provider) Start(ctx context.Context) error {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -122,11 +127,78 @@ func (p *Provider) Start(ctx context.Context) error {
 	fmt.Printf("✓ Model %q published as %s\n", p.model, p.id)
 	fmt.Printf("✓ Listening for requests via WebSocket\n")
 
-	// Start heartbeat
-	go p.heartbeatLoop()
+	for {
+		// Start heartbeat for this connection
+		hbCtx, hbCancel := context.WithCancel(p.ctx)
+		go p.heartbeatLoop(hbCtx)
 
-	// Block on the read loop — dispatches requests to handleRequest
-	return p.hub.ReadLoop(p.ctx, p.handleRequest)
+		// Block on the read loop — dispatches requests to handleRequest
+		err := p.hub.ReadLoop(p.ctx, p.handleRequest)
+		hbCancel()
+
+		// If the parent context was cancelled, this is a deliberate shutdown.
+		if p.ctx.Err() != nil {
+			return err
+		}
+
+		// Connection dropped unexpectedly — attempt to reconnect.
+		fmt.Printf("\n⚠ Connection lost: %v\n", err)
+		fmt.Printf("  Will attempt to reconnect every 60 seconds...\n")
+
+		if !p.reconnectLoop() {
+			if p.ctx.Err() != nil {
+				return p.ctx.Err()
+			}
+			return fmt.Errorf("failed to reconnect after %d attempts", maxReconnectAttempts)
+		}
+	}
+}
+
+const maxReconnectAttempts = 5
+
+// reconnectLoop tries to re-establish the hub WebSocket once per minute.
+// Returns true on success, false if the context was cancelled or attempts exhausted.
+func (p *Provider) reconnectLoop() bool {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for attempt := 1; attempt <= maxReconnectAttempts; attempt++ {
+		select {
+		case <-p.ctx.Done():
+			return false
+		case <-ticker.C:
+			fmt.Printf("⚠ Reconnect attempt %d/%d...\n", attempt, maxReconnectAttempts)
+
+			// Use a fresh token if available.
+			cfg := p.hubCfg
+			if p.tokenMgr != nil {
+				if t := p.tokenMgr.AccessToken(); t != "" {
+					cfg.Token = t
+				}
+			}
+
+			newClient, err := hub.Connect(cfg)
+			if err != nil {
+				fmt.Printf("⚠ Reconnect failed: %v\n", err)
+				continue
+			}
+
+			p.hub = newClient
+			fmt.Printf("✓ Reconnected to LLMHub network\n")
+			return true
+		}
+	}
+
+	fmt.Printf("✗ Failed to reconnect after %d attempts, giving up\n", maxReconnectAttempts)
+	return false
+}
+
+// CloseConnection closes the current WebSocket without stopping the provider,
+// allowing the reconnect loop in Start to re-establish the connection.
+func (p *Provider) CloseConnection() {
+	if p.hub != nil {
+		p.hub.Close()
+	}
 }
 
 // Stop gracefully shuts down the provider
@@ -272,7 +344,7 @@ func (p *Provider) recordRequest(tokens int) {
 	p.requestCount++
 }
 
-func (p *Provider) heartbeatLoop() {
+func (p *Provider) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -283,7 +355,7 @@ func (p *Provider) heartbeatLoop() {
 		select {
 		case <-ticker.C:
 			p.sendHeartbeat()
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}

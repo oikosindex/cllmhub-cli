@@ -93,15 +93,27 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle shutdown signals
+	// SIGINT (Ctrl+C) = full shutdown.
+	// SIGTERM (e.g. from system update) = close WebSocket so reconnect logic kicks in.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		fmt.Println("\nShutting down provider...")
-		p.Stop()
-		cancel()
+		for sig := range sigChan {
+			if sig == syscall.SIGINT {
+				fmt.Println("\nShutting down provider...")
+				p.Stop()
+				cancel()
+				return
+			}
+			// SIGTERM: close the WebSocket to trigger reconnect
+			fmt.Println("\nReceived SIGTERM, closing connection for reconnect...")
+			p.CloseConnection()
+		}
 	}()
 
-	return p.Start(ctx)
+	err = p.Start(ctx)
+	if err != nil && err == context.Canceled {
+		return nil // clean shutdown via signal
+	}
+	return err
 }
