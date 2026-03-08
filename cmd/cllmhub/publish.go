@@ -1,19 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
-	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/cllmhub/cllmhub-cli/internal/auth"
 	"github.com/cllmhub/cllmhub-cli/internal/backend"
 	"github.com/cllmhub/cllmhub-cli/internal/provider"
+	"github.com/cllmhub/cllmhub-cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -61,25 +59,15 @@ func runPublish(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no local models found; make sure Ollama or vLLM is running")
 		}
 
-		fmt.Println("Available models:")
+		labels := make([]string, len(entries))
 		for i, e := range entries {
-			fmt.Printf("  %d) %s (%s)\n", i+1, e.name, e.backend)
+			labels[i] = fmt.Sprintf("%s (%s)", e.name, e.backend)
 		}
-		fmt.Println()
-		fmt.Print("Enter a number to publish: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(answer)
-		if answer == "" {
+		idx := tui.Select("Select a model to publish:", labels)
+		if idx < 0 {
 			return fmt.Errorf("no model selected")
 		}
-
-		idx, err := strconv.Atoi(answer)
-		if err != nil || idx < 1 || idx > len(entries) {
-			return fmt.Errorf("invalid selection %q", answer)
-		}
-		selected := entries[idx-1]
+		selected := entries[idx]
 		publishModel = selected.name
 		if !cmd.Flags().Changed("backend") {
 			publishBackend = selected.backend
