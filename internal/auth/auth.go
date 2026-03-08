@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -203,6 +204,12 @@ func (tm *TokenManager) refreshLoop() {
 
 		resp, err := RefreshAccessToken(tm.ctx, tm.hubURL, rt)
 		if err != nil {
+			var permErr *PermanentOAuthError
+			if errors.As(err, &permErr) {
+				log.Printf("token refresh failed permanently: %v — run 'cllmhub login' to re-authenticate", err)
+				_ = RemoveCredentials()
+				return
+			}
 			log.Printf("token refresh failed: %v (will retry in 30s)", err)
 			retryTimer := time.NewTimer(30 * time.Second)
 			select {

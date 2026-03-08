@@ -37,6 +37,24 @@ type tokenErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
+// PermanentOAuthError represents an OAuth error that will not succeed on retry
+// (e.g. invalid_grant, invalid_client).
+type PermanentOAuthError struct {
+	Code        string
+	Description string
+}
+
+func (e *PermanentOAuthError) Error() string {
+	return fmt.Sprintf("%s — %s", e.Code, e.Description)
+}
+
+// permanentOAuthErrors lists OAuth error codes that are not worth retrying.
+var permanentOAuthErrors = map[string]bool{
+	"invalid_grant":  true,
+	"invalid_client": true,
+	"unauthorized_client": true,
+}
+
 const oauthClientID = "cllmhub-cli"
 
 // minPollInterval is the minimum polling interval for the device code flow.
@@ -168,6 +186,9 @@ func RefreshAccessToken(ctx context.Context, hubURL, refreshToken string) (*Toke
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
 		json.NewDecoder(resp.Body).Decode(&errResp)
+		if permanentOAuthErrors[errResp.Error] {
+			return nil, &PermanentOAuthError{Code: errResp.Error, Description: errResp.ErrorDescription}
+		}
 		return nil, fmt.Errorf("token refresh failed: %s — %s", errResp.Error, errResp.ErrorDescription)
 	}
 

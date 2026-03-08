@@ -21,13 +21,8 @@ The CLI will automatically detect the authorization and save your credentials.`,
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	// Clean up any existing credentials before starting a new login
-	if refreshToken, err := auth.LoadRefreshToken(); err == nil {
-		revokeCtx, revokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer revokeCancel()
-		_ = auth.RevokeToken(revokeCtx, hubURL, refreshToken)
-	}
-	_ = auth.RemoveCredentials()
+	// Capture existing credentials so we can revoke them after a successful login.
+	oldCreds, oldCredsErr := auth.LoadCredentials()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -62,6 +57,18 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// New login succeeded — clean up old credentials.
+	if oldCredsErr == nil && oldCreds.RefreshToken != "" {
+		oldHubURL := oldCreds.HubURL
+		if oldHubURL == "" {
+			oldHubURL = hubURL
+		}
+		revokeCtx, revokeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer revokeCancel()
+		_ = auth.RevokeToken(revokeCtx, oldHubURL, oldCreds.RefreshToken)
+	}
+	_ = auth.RemoveCredentials()
 
 	expiresAt := time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
 	if err := auth.SaveOAuthCredentials(hubURL, tr.AccessToken, tr.RefreshToken, tr.TokenType, expiresAt); err != nil {
