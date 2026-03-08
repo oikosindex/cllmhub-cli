@@ -25,6 +25,10 @@ type Backend interface {
 
 	// Health checks if the backend is available
 	Health(ctx context.Context) error
+
+	// ListModels returns the models available on the backend.
+	// Returns nil, nil if the backend does not support listing.
+	ListModels(ctx context.Context) ([]string, error)
 }
 
 // Request represents an inference request to a backend

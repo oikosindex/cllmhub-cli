@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	hubURL  string
-	Version = "dev"
+	hubURL       string
+	useLocalhost bool
+	Version      = "dev"
 )
 
 var rootCmd = &cobra.Command{
@@ -19,6 +20,11 @@ var rootCmd = &cobra.Command{
 	Long:    `cLLMHub turns your local LLM into a production API.
 Publish models, create tokens, and share access with anyone.`,
 	Version: Version,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if useLocalhost {
+			hubURL = "http://localhost:8080"
+		}
+	},
 }
 
 func init() {
@@ -27,6 +33,9 @@ func init() {
 		defaultHubURL = saved
 	}
 	rootCmd.PersistentFlags().StringVar(&hubURL, "hub-url", defaultHubURL, "LLMHub gateway URL")
+	rootCmd.PersistentFlags().MarkHidden("hub-url")
+	rootCmd.PersistentFlags().BoolVarP(&useLocalhost, "local", "l", false, "Use localhost hub (http://localhost:8080)")
+	rootCmd.PersistentFlags().MarkHidden("local")
 
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 

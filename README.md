@@ -19,8 +19,11 @@ curl -fsSL https://raw.githubusercontent.com/cllmhub/cllmhub-cli/main/install.sh
 # Authenticate
 cllmhub login
 
-# Publish a model (requires Ollama or another backend running)
-cllmhub publish --model llama3 --backend ollama
+# Publish a model (interactive — picks from local backends)
+cllmhub publish
+
+# Or specify the model directly
+cllmhub publish -m llama3 -b ollama
 ```
 
 ## Installation
@@ -73,9 +76,11 @@ Show the currently logged-in user.
 
 Publish a local model to the hub. Keeps a persistent connection — your model is online as long as the CLI is running.
 
+When run without `-m`, it discovers models from local backends and lets you pick one interactively.
+
 ```
 Flags:
-  --model,   -m   Model name to publish (required)
+  --model,   -m   Model name to publish (omit for interactive selection)
   --backend, -b   Backend type: ollama | vllm | llamacpp | custom (default: ollama)
   --backend-url   Backend endpoint URL (overrides default for the backend type)
   --hub-url       Hub gateway URL (default: saved from login, or https://cllmhub.com)

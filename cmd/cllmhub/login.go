@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cllmhub/cllmhub-cli/internal/auth"
+	"github.com/cllmhub/cllmhub-cli/internal/backend"
 	"github.com/spf13/cobra"
 )
 
@@ -99,17 +102,73 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("\nAuthenticated successfully!")
-	fmt.Println()
-	fmt.Println("Next steps — publish a model to the cLLMHub network:")
-	fmt.Println()
-	fmt.Println("  1. Make sure your inference backend is running (e.g. Ollama, vLLM)")
-	fmt.Println("  2. Run:")
-	fmt.Println()
-	fmt.Println("       cllmhub publish --model <model-name> --backend ollama")
-	fmt.Println()
-	fmt.Println("     This keeps a long-running process that bridges requests from the")
-	fmt.Println("     network to your local backend. Press Ctrl+C to stop publishing.")
+
+	// Try to list models from local backends for quick publish.
+	if entries := listLocalModels(); len(entries) > 0 {
+		fmt.Println("\nAvailable models:")
+		for i, e := range entries {
+			fmt.Printf("  %d) %s (%s)\n", i+1, e.name, e.backend)
+		}
+		fmt.Println()
+		fmt.Print("Enter a number to publish, or press Enter to skip: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(answer)
+		if answer != "" {
+			idx, err := strconv.Atoi(answer)
+			if err != nil || idx < 1 || idx > len(entries) {
+				fmt.Println("Invalid selection, skipping.")
+				return nil
+			}
+			selected := entries[idx-1]
+			fmt.Printf("\nPublishing %s...\n\n", selected.name)
+			execCmd := exec.Command(os.Args[0], "publish", "-m", selected.name, "-b", selected.backend)
+			execCmd.Stdin = os.Stdin
+			execCmd.Stdout = os.Stdout
+			execCmd.Stderr = os.Stderr
+			return execCmd.Run()
+		}
+	} else {
+		fmt.Println()
+		fmt.Println("To publish a model:")
+		fmt.Println("  cllmhub publish -m <model-name>")
+	}
+
 	return nil
+}
+
+// modelEntry holds a model name and the backend it came from.
+type modelEntry struct {
+	name    string
+	backend string
+}
+
+// listLocalModels queries Ollama and vLLM for available models.
+// Returns all models found across both backends.
+func listLocalModels() []modelEntry {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var entries []modelEntry
+
+	if b, err := backend.NewOllama(backend.Config{}); err == nil {
+		if models, err := b.ListModels(ctx); err == nil {
+			for _, m := range models {
+				entries = append(entries, modelEntry{name: m, backend: "ollama"})
+			}
+		}
+	}
+
+	if b, err := backend.NewVLLM(backend.Config{}); err == nil {
+		if models, err := b.ListModels(ctx); err == nil {
+			for _, m := range models {
+				entries = append(entries, modelEntry{name: m, backend: "vllm"})
+			}
+		}
+	}
+
+	return entries
 }
 
 // fetchCurrentUsername tries to get the username from the hub. Returns empty string on any failure.

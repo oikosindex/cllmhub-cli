@@ -228,6 +228,39 @@ func (o *Ollama) Health(ctx context.Context) error {
 		o.model, formatModelList(available), o.model)
 }
 
+// ListModels returns all models available in Ollama.
+func (o *Ollama) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", o.url+"/api/tags", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ollama not reachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama returned status %d", resp.StatusCode)
+	}
+
+	var tagsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tagsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse ollama models: %w", err)
+	}
+
+	var models []string
+	for _, m := range tagsResp.Models {
+		models = append(models, m.Name)
+	}
+	return models, nil
+}
+
 func formatModelList(models []string) string {
 	result := ""
 	for i, m := range models {

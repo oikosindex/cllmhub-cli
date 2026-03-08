@@ -129,6 +129,18 @@ func (p *Provider) Start(ctx context.Context) error {
 	fmt.Printf("✓ Model %q published as %s\n", p.model, p.id)
 	fmt.Printf("✓ Listening for requests via WebSocket\n")
 
+	// Watch for token manager death and shut down the provider.
+	if p.tokenMgr != nil {
+		go func() {
+			select {
+			case <-p.tokenMgr.Dead:
+				fmt.Printf("\n✗ Authentication expired — run 'cllmhub login' and restart\n")
+				p.cancel()
+			case <-p.ctx.Done():
+			}
+		}()
+	}
+
 	for {
 		// Start heartbeat for this connection
 		hbCtx, hbCancel := context.WithCancel(p.ctx)

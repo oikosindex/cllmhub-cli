@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/cllmhub/cllmhub-cli/internal/auth"
@@ -32,8 +35,11 @@ advertises the model in the registry, and bridges incoming requests
 to the local inference backend.
 
 Supported backends: ollama, llama.cpp, vllm, custom`,
-	Example: `  cllmhub publish --model "llama3-70b" --backend ollama
-  cllmhub publish --model "mixtral-8x7b" --backend vllm --hub-url https://cllmhub.com`,
+	Example: `  # Publish a model using the default backend (ollama)
+  cllmhub publish -m "llama3-70b"
+
+  # Publish a model using a different backend
+  cllmhub publish -m "mixtral-8x7b" -b vllm`,
 	RunE: runPublish,
 }
 
@@ -46,10 +52,41 @@ func init() {
 	publishCmd.Flags().StringVar(&publishLogFile, "log-file", "", "Path to audit log file (JSON lines)")
 	publishCmd.Flags().IntVar(&publishRateLimit, "rate-limit", 0, "Max requests per minute (0 = unlimited)")
 
-	publishCmd.MarkFlagRequired("model")
 }
 
 func runPublish(cmd *cobra.Command, args []string) error {
+	if publishModel == "" {
+		entries := listLocalModels()
+		if len(entries) == 0 {
+			return fmt.Errorf("no local models found; make sure Ollama or vLLM is running")
+		}
+
+		fmt.Println("Available models:")
+		for i, e := range entries {
+			fmt.Printf("  %d) %s (%s)\n", i+1, e.name, e.backend)
+		}
+		fmt.Println()
+		fmt.Print("Enter a number to publish: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			return fmt.Errorf("no model selected")
+		}
+
+		idx, err := strconv.Atoi(answer)
+		if err != nil || idx < 1 || idx > len(entries) {
+			return fmt.Errorf("invalid selection %q", answer)
+		}
+		selected := entries[idx-1]
+		publishModel = selected.name
+		if !cmd.Flags().Changed("backend") {
+			publishBackend = selected.backend
+		}
+		fmt.Println()
+	}
+
 	token, tokenMgr, err := auth.ResolveTokenManager(hubURL)
 	if err != nil {
 		return err

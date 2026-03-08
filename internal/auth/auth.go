@@ -147,6 +147,9 @@ type TokenManager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// Dead is closed when the token manager can no longer refresh tokens.
+	Dead chan struct{}
 }
 
 // NewTokenManager creates a TokenManager that will refresh the access token
@@ -160,6 +163,7 @@ func NewTokenManager(hubURL, accessToken, refreshToken string, expiresAt time.Ti
 		expiresAt:   expiresAt,
 		ctx:         ctx,
 		cancel:      cancel,
+		Dead:        make(chan struct{}),
 	}
 	tm.wg.Add(1)
 	go tm.refreshLoop()
@@ -181,6 +185,13 @@ func (tm *TokenManager) Stop() {
 
 func (tm *TokenManager) refreshLoop() {
 	defer tm.wg.Done()
+	markDead := func() {
+		select {
+		case <-tm.Dead:
+		default:
+			close(tm.Dead)
+		}
+	}
 	for {
 		tm.mu.RLock()
 		until := time.Until(tm.expiresAt) - 5*time.Minute
@@ -202,23 +213,36 @@ func (tm *TokenManager) refreshLoop() {
 		rt := tm.refreshTok
 		tm.mu.RUnlock()
 
-		resp, err := RefreshAccessToken(tm.ctx, tm.hubURL, rt)
-		if err != nil {
+		var resp *TokenResponse
+		var err error
+		const maxRefreshAttempts = 2
+		for attempt := 1; attempt <= maxRefreshAttempts; attempt++ {
+			resp, err = RefreshAccessToken(tm.ctx, tm.hubURL, rt)
+			if err == nil {
+				break
+			}
 			var permErr *PermanentOAuthError
 			if errors.As(err, &permErr) {
 				log.Printf("token refresh failed permanently: %v — run 'cllmhub login' to re-authenticate", err)
 				_ = RemoveCredentials()
+				markDead()
 				return
 			}
-			log.Printf("token refresh failed: %v (will retry in 30s)", err)
-			retryTimer := time.NewTimer(30 * time.Second)
-			select {
-			case <-tm.ctx.Done():
-				retryTimer.Stop()
-				return
-			case <-retryTimer.C:
+			log.Printf("token refresh attempt %d/%d failed: %v", attempt, maxRefreshAttempts, err)
+			if attempt < maxRefreshAttempts {
+				retryTimer := time.NewTimer(30 * time.Second)
+				select {
+				case <-tm.ctx.Done():
+					retryTimer.Stop()
+					return
+				case <-retryTimer.C:
+				}
 			}
-			continue
+		}
+		if err != nil {
+			log.Printf("token refresh failed after %d attempts — run 'cllmhub login' to re-authenticate", maxRefreshAttempts)
+			markDead()
+			return
 		}
 
 		expiresAt := time.Now().Add(time.Duration(resp.ExpiresIn) * time.Second)

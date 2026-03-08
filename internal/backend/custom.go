@@ -141,6 +141,11 @@ func (c *Custom) Stream(ctx context.Context, req *Request, callback func(token s
 	return resp, nil
 }
 
+// ListModels is not supported for custom backends.
+func (c *Custom) ListModels(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
 // Health checks if the custom backend is available
 func (c *Custom) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.url, nil)

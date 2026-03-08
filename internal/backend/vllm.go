@@ -218,6 +218,42 @@ func (v *VLLM) Stream(ctx context.Context, req *Request, callback func(token str
 	}, nil
 }
 
+// ListModels returns all models available in vLLM.
+func (v *VLLM) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", v.url+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if v.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+v.apiKey)
+	}
+
+	resp, err := v.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vllm not reachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("vllm returned status %d", resp.StatusCode)
+	}
+
+	var modelsResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse vllm models: %w", err)
+	}
+
+	var models []string
+	for _, m := range modelsResp.Data {
+		models = append(models, m.ID)
+	}
+	return models, nil
+}
+
 // Health checks if vLLM is available
 func (v *VLLM) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", v.url+"/v1/models", nil)

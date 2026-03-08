@@ -177,6 +177,11 @@ func (l *LlamaCpp) Stream(ctx context.Context, req *Request, callback func(token
 	}, nil
 }
 
+// ListModels is not supported for llama.cpp (single-model server).
+func (l *LlamaCpp) ListModels(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
 // Health checks if llama.cpp server is available
 func (l *LlamaCpp) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", l.url+"/health", nil)
