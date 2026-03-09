@@ -29,7 +29,6 @@ type Provider struct {
 	queueDepth     int
 	startTime      time.Time
 	modelServerUp  bool
-	heartbeatReset chan struct{}
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,7 +98,6 @@ func New(cfg Config) (*Provider, error) {
 		hubCfg:        hubCfg,
 		startTime:      time.Now(),
 		modelServerUp:  true,
-		heartbeatReset: make(chan struct{}, 1),
 		tokenMgr:       cfg.TokenManager,
 	}
 
@@ -143,14 +141,13 @@ func (p *Provider) Start(ctx context.Context) error {
 		}()
 	}
 
-	for {
-		// Start heartbeat for this connection
-		hbCtx, hbCancel := context.WithCancel(p.ctx)
-		go p.heartbeatLoop(hbCtx)
+	// Send initial heartbeat so the provider is immediately visible.
+	p.sendHeartbeat()
 
-		// Block on the read loop — dispatches requests to handleRequest
-		err := p.hub.ReadLoop(p.ctx, p.handleRequest)
-		hbCancel()
+	for {
+		// Block on the read loop — dispatches requests to handleRequest.
+		// On each hub ping, reply with a heartbeat to refresh the provider TTL.
+		err := p.hub.ReadLoop(p.ctx, p.handleRequest, p.sendHeartbeat)
 
 		// If the parent context was cancelled, this is a deliberate shutdown.
 		if p.ctx.Err() != nil {
@@ -455,50 +452,12 @@ func (p *Provider) recordRequest(tokens int) {
 	defer p.mu.Unlock()
 
 	p.requestCount++
-
-	// Signal the heartbeat loop to reset its timer — a request acts as a heartbeat.
-	select {
-	case p.heartbeatReset <- struct{}{}:
-	default:
-	}
-}
-
-func (p *Provider) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(60 * time.Second)
-	defer ticker.Stop()
-
-	// Send initial heartbeat
-	p.sendHeartbeat()
-
-	for {
-		select {
-		case <-ticker.C:
-			p.sendHeartbeat()
-		case <-p.heartbeatReset:
-			// A request was served — reset the timer so the next heartbeat
-			// fires 1 minute after the last activity instead of piling up.
-			ticker.Reset(60 * time.Second)
-		case <-ctx.Done():
-			return
-		}
-	}
 }
 
 func (p *Provider) sendHeartbeat() {
 	p.mu.Lock()
 	queueDepth := p.queueDepth
-	up := p.modelServerUp
 	p.mu.Unlock()
-
-	// Check model server health on each heartbeat
-	if up {
-		ctx, cancel := context.WithTimeout(p.ctx, 10*time.Second)
-		err := p.backend.Health(ctx)
-		cancel()
-		if err != nil && backend.IsConnectionError(err) {
-			go p.onModelServerDown()
-		}
-	}
 
 	var token string
 	if p.tokenMgr != nil {

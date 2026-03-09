@@ -169,7 +169,7 @@ func Connect(cfg ConnectConfig) (*HubClient, error) {
 
 // ReadLoop reads messages from the WebSocket and dispatches requests to the callback.
 // It blocks until the context is cancelled or the connection is closed.
-func (c *HubClient) ReadLoop(ctx context.Context, onRequest func(req RequestMsg)) error {
+func (c *HubClient) ReadLoop(ctx context.Context, onRequest func(req RequestMsg), onPing func()) error {
 	done := make(chan struct{})
 	go func() {
 		<-ctx.Done()
@@ -202,7 +202,9 @@ func (c *HubClient) ReadLoop(ctx context.Context, onRequest func(req RequestMsg)
 			}
 			go onRequest(req)
 		case MsgTypePing:
-			// No response needed; just keeps the connection alive.
+			if onPing != nil {
+				onPing()
+			}
 		}
 	}
 }
