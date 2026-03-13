@@ -45,7 +45,7 @@ Show the currently logged-in user.
 
 Publish a local model to the hub. Keeps a persistent WebSocket connection — your model is online as long as the CLI is running.
 
-When run without `-m`, it discovers models from local backends (Ollama, vLLM) and lets you pick one interactively using arrow keys.
+When run without `-m`, it discovers models from local backends (Ollama, vLLM, LM Studio) and lets you pick one interactively using arrow keys.
 
 **Features:**
 - Auto-reconnect on WebSocket disconnect (up to 5 retries)
@@ -57,7 +57,7 @@ When run without `-m`, it discovers models from local backends (Ollama, vLLM) an
 ```
 Flags:
   --model,          -m   Model name to publish (omit for interactive selection)
-  --backend,        -b   Backend type: ollama | vllm | llamacpp | custom (default: ollama)
+  --backend,        -b   Backend type: ollama | vllm | lmstudio | llamacpp | custom (default: ollama)
   --backend-url          Backend endpoint URL (overrides default for the backend type)
   --description,    -d   Model description (max 500 chars)
   --max-concurrent, -c   Maximum concurrent requests (default: 1)
@@ -79,6 +79,7 @@ Update the CLI to the latest version. The CLI also checks for updates automatica
 |------------|------------------------|-------|
 | `ollama`   | http://localhost:11434 | Default backend, most common |
 | `vllm`     | http://localhost:8000  | High throughput, GPU optimized |
+| `lmstudio` | http://localhost:1234  | Desktop app for running local LLMs |
 | `llamacpp` | http://localhost:8080  | CPU-friendly, quantized models |
 | `custom`   | (user-specified)       | Any OpenAI-compatible HTTP server |
 

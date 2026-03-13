@@ -32,7 +32,7 @@ var publishCmd = &cobra.Command{
 advertises the model in the registry, and bridges incoming requests
 to the local inference backend.
 
-Supported backends: ollama, llama.cpp, vllm, custom`,
+Supported backends: ollama, llama.cpp, vllm, lmstudio, custom`,
 	Example: `  # Publish a model using the default backend (ollama)
   cllmhub publish -m "llama3-70b"
 
@@ -43,7 +43,7 @@ Supported backends: ollama, llama.cpp, vllm, custom`,
 
 func init() {
 	publishCmd.Flags().StringVarP(&publishModel, "model", "m", "", "Model name to publish (required)")
-	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, custom")
+	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, lmstudio, custom")
 	publishCmd.Flags().StringVar(&publishBackendURL, "backend-url", "", "Backend endpoint URL (overrides default for the backend type)")
 	publishCmd.Flags().StringVarP(&publishDescription, "description", "d", "", "Model description")
 	publishCmd.Flags().IntVarP(&publishMaxConcurrent, "max-concurrent", "c", 1, "Maximum concurrent requests")
@@ -56,7 +56,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	if publishModel == "" {
 		entries := listLocalModels()
 		if len(entries) == 0 {
-			return fmt.Errorf("no local models found; make sure Ollama or vLLM is running")
+			return fmt.Errorf("no local models found; make sure Ollama, vLLM, or LM Studio is running")
 		}
 
 		labels := make([]string, len(entries))

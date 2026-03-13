@@ -48,7 +48,7 @@ type Response struct {
 
 // Config holds backend configuration
 type Config struct {
-	Type     string // "ollama", "llamacpp", "vllm", "custom"
+	Type     string // "ollama", "llamacpp", "vllm", "lmstudio", "custom"
 	URL      string
 	Model    string
 	APIKey   string // for custom backends that need auth
@@ -106,6 +106,8 @@ func New(cfg Config) (Backend, error) {
 		return NewLlamaCpp(cfg)
 	case "vllm":
 		return NewVLLM(cfg)
+	case "lmstudio":
+		return NewLMStudio(cfg)
 	case "custom":
 		return NewCustom(cfg)
 	default:
