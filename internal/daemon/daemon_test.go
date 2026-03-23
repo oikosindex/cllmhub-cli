@@ -72,7 +72,7 @@ func TestStatusResponse_JSON(t *testing.T) {
 }
 
 func TestPublishRequest_Empty(t *testing.T) {
-	req := PublishRequest{Models: []string{}}
+	req := PublishRequest{Models: []PublishModelSpec{}}
 	if len(req.Models) != 0 {
 		t.Error("expected empty models list")
 	}

@@ -141,8 +141,8 @@ func (c *Client) Stop() error {
 }
 
 // Publish requests the daemon to publish one or more models.
-func (c *Client) Publish(modelNames []string) (*PublishResponse, error) {
-	body, _ := json.Marshal(PublishRequest{Models: modelNames})
+func (c *Client) Publish(specs []PublishModelSpec) (*PublishResponse, error) {
+	body, _ := json.Marshal(PublishRequest{Models: specs})
 	resp, err := c.doRequest("POST", "http://daemon/api/publish", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to daemon: %w", err)
@@ -163,7 +163,7 @@ func (c *Client) Publish(modelNames []string) (*PublishResponse, error) {
 
 // Unpublish requests the daemon to unpublish one or more models.
 func (c *Client) Unpublish(modelNames []string) (*PublishResponse, error) {
-	body, _ := json.Marshal(PublishRequest{Models: modelNames})
+	body, _ := json.Marshal(UnpublishRequest{Models: modelNames})
 	resp, err := c.doRequest("POST", "http://daemon/api/unpublish", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to daemon: %w", err)

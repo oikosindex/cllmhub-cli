@@ -33,12 +33,28 @@ type StatusResponse struct {
 
 // ModelStatus represents the state of a single model.
 type ModelStatus struct {
-	Name  string `json:"name"`
-	State string `json:"state"` // "published", "downloaded", "error"
+	Name    string `json:"name"`
+	State   string `json:"state"`   // "published", "downloaded", "error"
+	Backend string `json:"backend"` // "engine", "ollama", "vllm", "lmstudio", "custom"
 }
 
 // PublishRequest is the body for POST /api/publish.
 type PublishRequest struct {
+	Models []PublishModelSpec `json:"models"`
+}
+
+// PublishModelSpec describes a model to publish, with optional external backend info.
+// If BackendType is empty, the model is assumed to be a downloaded GGUF served via the engine.
+type PublishModelSpec struct {
+	Name          string `json:"name"`
+	BackendType   string `json:"backend_type,omitempty"`   // "ollama", "vllm", "lmstudio", "llamacpp", "custom", "" (= engine/GGUF)
+	BackendURL    string `json:"backend_url,omitempty"`    // override default backend URL
+	MaxConcurrent int    `json:"max_concurrent,omitempty"` // max concurrent requests (default 1)
+	Description   string `json:"description,omitempty"`
+}
+
+// UnpublishRequest is the body for POST /api/unpublish.
+type UnpublishRequest struct {
 	Models []string `json:"models"`
 }
 
@@ -192,11 +208,12 @@ func (d *Daemon) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Engine: d.engine.State(),
 	}
 
-	// Add published models
-	for _, name := range d.bridges.PublishedModels() {
+	// Add published models with backend info
+	for _, info := range d.bridges.PublishedModelsWithBackend() {
 		resp.Models = append(resp.Models, ModelStatus{
-			Name:  name,
-			State: "published",
+			Name:    info.Name,
+			State:   "published",
+			Backend: info.Backend,
 		})
 	}
 
@@ -241,56 +258,82 @@ func (d *Daemon) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load registry
-	registry, err := models.LoadRegistry()
-	if err != nil {
-		d.logger.Error("failed to load registry", "error", err)
-		http.Error(w, `{"error":"failed to load model registry"}`, http.StatusInternalServerError)
-		return
+	// Separate engine-backed (GGUF) models from external-backend models.
+	var engineSpecs []PublishModelSpec
+	var externalSpecs []PublishModelSpec
+	for _, spec := range req.Models {
+		if spec.BackendType == "" || spec.BackendType == "engine" {
+			engineSpecs = append(engineSpecs, spec)
+		} else {
+			externalSpecs = append(externalSpecs, spec)
+		}
 	}
 
-	// Validate all models exist and check memory
-	var totalNeeded int64
-	for _, name := range req.Models {
-		entry, ok := registry.Get(name)
-		if !ok || entry.State != "ready" {
-			http.Error(w, fmt.Sprintf(`{"error":"model %q not downloaded — run 'cllmhub download %s' first"}`, name, name), http.StatusBadRequest)
+	// --- Engine-backed models: validate registry, memory, start engine ---
+	if len(engineSpecs) > 0 {
+		registry, err := models.LoadRegistry()
+		if err != nil {
+			d.logger.Error("failed to load registry", "error", err)
+			http.Error(w, `{"error":"failed to load model registry"}`, http.StatusInternalServerError)
 			return
 		}
-		totalNeeded += entry.SizeBytes
-	}
 
-	// Check memory
-	var currentUsage int64
-	for _, name := range d.bridges.PublishedModels() {
-		if entry, ok := registry.Get(name); ok {
-			currentUsage += entry.SizeBytes
+		var totalNeeded int64
+		for _, spec := range engineSpecs {
+			entry, ok := registry.Get(spec.Name)
+			if !ok || entry.State != "ready" {
+				http.Error(w, fmt.Sprintf(`{"error":"model %q not downloaded — run 'cllmhub download %s' first"}`, spec.Name, spec.Name), http.StatusBadRequest)
+				return
+			}
+			totalNeeded += entry.SizeBytes
 		}
-	}
 
-	ok, msg := engine.CanFit(totalNeeded, currentUsage)
-	if !ok {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, msg), http.StatusBadRequest)
-		return
-	}
+		var currentUsage int64
+		for _, name := range d.bridges.PublishedModels() {
+			if entry, ok := registry.Get(name); ok {
+				currentUsage += entry.SizeBytes
+			}
+		}
 
-	// Start engine if not running
-	if !d.engine.IsRunning() {
-		if err := d.engine.Start(); err != nil {
-			d.logger.Error("failed to start engine", "error", err)
-			http.Error(w, `{"error":"failed to start inference engine"}`, http.StatusInternalServerError)
+		ok, msg := engine.CanFit(totalNeeded, currentUsage)
+		if !ok {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, msg), http.StatusBadRequest)
 			return
 		}
+
+		if !d.engine.IsRunning() {
+			if err := d.engine.Start(); err != nil {
+				d.logger.Error("failed to start engine", "error", err)
+				http.Error(w, `{"error":"failed to start inference engine"}`, http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 
-	// Start bridges
+	// --- Start bridges ---
 	resp := PublishResponse{Results: make([]PublishResult, 0, len(req.Models))}
-	for _, name := range req.Models {
-		result := PublishResult{Model: name}
-		if d.bridges.IsPublished(name) {
+
+	// Engine-backed bridges
+	for _, spec := range engineSpecs {
+		result := PublishResult{Model: spec.Name}
+		if d.bridges.IsPublished(spec.Name) {
 			result.Success = true
 			result.Already = true
-		} else if err := d.bridges.StartBridge(name, d.engine.Port(), hubURL, token, tokenMgr); err != nil {
+		} else if err := d.bridges.StartBridge(spec.Name, d.engine.Port(), hubURL, token, tokenMgr); err != nil {
+			result.Error = err.Error()
+		} else {
+			result.Success = true
+		}
+		resp.Results = append(resp.Results, result)
+	}
+
+	// External-backend bridges
+	for _, spec := range externalSpecs {
+		result := PublishResult{Model: spec.Name}
+		if d.bridges.IsPublished(spec.Name) {
+			result.Success = true
+			result.Already = true
+		} else if err := d.bridges.StartExternalBridge(spec, hubURL, token, tokenMgr); err != nil {
 			result.Error = err.Error()
 		} else {
 			result.Success = true
@@ -303,7 +346,7 @@ func (d *Daemon) handlePublish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleUnpublish(w http.ResponseWriter, r *http.Request) {
-	var req PublishRequest
+	var req UnpublishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
@@ -325,10 +368,10 @@ func (d *Daemon) handleUnpublish(w http.ResponseWriter, r *http.Request) {
 		resp.Results = append(resp.Results, result)
 	}
 
-	// Stop engine if no more published models
-	if d.bridges.Count() == 0 && d.engine.IsRunning() {
+	// Stop engine if no more engine-backed models remain
+	if d.bridges.EngineBackedCount() == 0 && d.engine.IsRunning() {
 		d.engine.Stop()
-		d.logger.Info("engine stopped — no more published models")
+		d.logger.Info("engine stopped — no more engine-backed models")
 	}
 
 	w.Header().Set("Content-Type", "application/json")

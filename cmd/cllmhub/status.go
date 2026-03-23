@@ -49,10 +49,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 					alias = entry.Alias
 				}
 			}
+			backendLabel := m.Backend
+			if backendLabel == "" {
+				backendLabel = "engine"
+			}
+			stateStr := fmt.Sprintf("%s (%s)", m.State, backendLabel)
 			if alias != "" {
-				fmt.Printf("  %-6s %-20s %s\n", alias, m.Name, m.State)
+				fmt.Printf("  %-6s %-20s %s\n", alias, m.Name, stateStr)
 			} else {
-				fmt.Printf("  %-6s %-20s %s\n", "-", m.Name, m.State)
+				fmt.Printf("  %-6s %-20s %s\n", "-", m.Name, stateStr)
 			}
 		}
 	}

@@ -16,10 +16,11 @@ import (
 
 // Bridge wraps a Provider to run inside the daemon.
 type Bridge struct {
-	model    string
-	provider *provider.Provider
-	cancel   context.CancelFunc
-	done     chan struct{}
+	model       string
+	backendType string // "engine", "ollama", "vllm", "lmstudio", "llamacpp", "custom"
+	provider    *provider.Provider
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 // BridgeManager manages all active bridges.
@@ -78,10 +79,11 @@ func (bm *BridgeManager) StartBridge(model string, enginePort int, hubURL, token
 	done := make(chan struct{})
 
 	bridge := &Bridge{
-		model:    model,
-		provider: p,
-		cancel:   cancel,
-		done:     done,
+		model:       model,
+		backendType: "engine",
+		provider:    p,
+		cancel:      cancel,
+		done:        done,
 	}
 
 	bm.mu.Lock()
@@ -99,7 +101,70 @@ func (bm *BridgeManager) StartBridge(model string, enginePort int, hubURL, token
 		bm.mu.Unlock()
 	}()
 
-	bm.logger.Info("bridge started", "model", model)
+	bm.logger.Info("bridge started", "model", model, "backend", "engine")
+	return nil
+}
+
+// StartExternalBridge creates and starts a bridge for a model served by an external backend.
+func (bm *BridgeManager) StartExternalBridge(spec PublishModelSpec, hubURL, token string, tokenMgr *auth.TokenManager) error {
+	bm.mu.Lock()
+	if _, exists := bm.bridges[spec.Name]; exists {
+		bm.mu.Unlock()
+		return fmt.Errorf("model %q is already published", spec.Name)
+	}
+	bm.mu.Unlock()
+
+	maxConcurrent := spec.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1
+	}
+
+	cfg := provider.Config{
+		Model:         spec.Name,
+		Description:   spec.Description,
+		MaxConcurrent: maxConcurrent,
+		Token:         token,
+		Backend: backend.Config{
+			Type:  spec.BackendType,
+			URL:   spec.BackendURL,
+			Model: spec.Name,
+		},
+		HubURL:       hubURL,
+		TokenManager: tokenMgr,
+		Logger:       bm.logger,
+	}
+
+	p, err := provider.New(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create provider for %q: %w", spec.Name, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	bridge := &Bridge{
+		model:       spec.Name,
+		backendType: spec.BackendType,
+		provider:    p,
+		cancel:      cancel,
+		done:        done,
+	}
+
+	bm.mu.Lock()
+	bm.bridges[spec.Name] = bridge
+	bm.mu.Unlock()
+
+	go func() {
+		defer close(done)
+		if err := p.Start(ctx); err != nil && ctx.Err() == nil {
+			bm.logger.Error("bridge stopped with error", "model", spec.Name, "error", err)
+		}
+		bm.mu.Lock()
+		delete(bm.bridges, spec.Name)
+		bm.mu.Unlock()
+	}()
+
+	bm.logger.Info("bridge started", "model", spec.Name, "backend", spec.BackendType)
 	return nil
 }
 
@@ -160,6 +225,12 @@ func (bm *BridgeManager) IsPublished(model string) bool {
 	return exists
 }
 
+// BridgeInfo describes a published model and its backend.
+type BridgeInfo struct {
+	Name    string
+	Backend string // "engine", "ollama", "vllm", etc.
+}
+
 // PublishedModels returns the list of currently published model names.
 func (bm *BridgeManager) PublishedModels() []string {
 	bm.mu.RLock()
@@ -172,9 +243,34 @@ func (bm *BridgeManager) PublishedModels() []string {
 	return models
 }
 
+// PublishedModelsWithBackend returns info about all published models including backend type.
+func (bm *BridgeManager) PublishedModelsWithBackend() []BridgeInfo {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+
+	infos := make([]BridgeInfo, 0, len(bm.bridges))
+	for _, b := range bm.bridges {
+		infos = append(infos, BridgeInfo{Name: b.model, Backend: b.backendType})
+	}
+	return infos
+}
+
 // Count returns the number of active bridges.
 func (bm *BridgeManager) Count() int {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 	return len(bm.bridges)
+}
+
+// EngineBackedCount returns the number of bridges using the local engine.
+func (bm *BridgeManager) EngineBackedCount() int {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+	count := 0
+	for _, b := range bm.bridges {
+		if b.backendType == "engine" {
+			count++
+		}
+	}
+	return count
 }
