@@ -37,6 +37,9 @@ Or use an external backend (Ollama, vLLM, LM Studio):
   cllmhub publish -m "llama3-70b" -b ollama`,
 	SilenceUsage: true,
 	Version:      Version,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runStatus(cmd, args)
+	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if cmd.Name() != "update" {
 			verChecker = versioncheck.New(Version)
