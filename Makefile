@@ -1,7 +1,7 @@
 .PHONY: build build-all clean test lint
 
 BINARY_NAME=cllmhub
-VERSION=0.5.3
+VERSION=0.5.4
 BUILD_DIR=bin
 LDFLAGS=-ldflags "-X main.Version=$(VERSION)"
 
