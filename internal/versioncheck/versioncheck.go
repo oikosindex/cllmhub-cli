@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func (c *Checker) setResult(latest string) {
 	if current == "" || latest == "" || current == "dev" {
 		return
 	}
-	if latest == current {
+	if !isNewer(latest, current) {
 		return
 	}
 
@@ -99,6 +100,29 @@ func (c *Checker) setResult(latest string) {
 		CurrentVersion: current,
 	}
 	c.mu.Unlock()
+}
+
+// isNewer returns true if version a is strictly newer than version b.
+// Compares semver-style dot-separated integers (e.g. "0.5.3" > "0.5.2").
+func isNewer(a, b string) bool {
+	ap := strings.Split(a, ".")
+	bp := strings.Split(b, ".")
+	for i := 0; i < len(ap) || i < len(bp); i++ {
+		ai, bi := 0, 0
+		if i < len(ap) {
+			ai, _ = strconv.Atoi(ap[i])
+		}
+		if i < len(bp) {
+			bi, _ = strconv.Atoi(bp[i])
+		}
+		if ai > bi {
+			return true
+		}
+		if ai < bi {
+			return false
+		}
+	}
+	return false
 }
 
 func normalizeVersion(v string) string {

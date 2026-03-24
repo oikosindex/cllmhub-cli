@@ -46,7 +46,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Detect hardware defaults, then override with any user-specified flags
-	cfg, profile := engine.DetectDefaults()
+	cfg, _ := engine.DetectDefaults()
 
 	if cmd != nil {
 		if cmd.Flags().Changed("ctx-size") {
@@ -65,9 +65,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 			cfg.BatchSize, _ = cmd.Flags().GetInt("batch-size")
 		}
 	}
-
-	fmt.Printf("Hardware profile: %s\n", profile)
-	fmt.Printf("Engine config:    %s\n", cfg.Summary())
 
 	// Open log file for daemon stdout/stderr
 	logDir, err := daemon.LogDir()

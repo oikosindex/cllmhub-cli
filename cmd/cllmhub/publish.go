@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	"github.com/cllmhub/cllmhub-cli/internal/daemon"
+	"github.com/cllmhub/cllmhub-cli/internal/engine"
 	"github.com/cllmhub/cllmhub-cli/internal/models"
 	"github.com/cllmhub/cllmhub-cli/internal/tui"
 	"github.com/spf13/cobra"
@@ -153,6 +154,10 @@ func ensureDaemon() error {
 
 // publishViaDaemon publishes downloaded GGUF models through the daemon engine.
 func publishViaDaemon(modelNames []string) error {
+	cfg, profile := engine.DetectDefaults()
+	fmt.Printf("Hardware profile: %s\n", profile)
+	fmt.Printf("Engine config:    %s\n", cfg.Summary())
+
 	registry, err := models.LoadRegistry()
 	if err != nil {
 		return fmt.Errorf("failed to load model registry: %w", err)
