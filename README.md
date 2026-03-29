@@ -201,7 +201,7 @@ cllmhub publish -m mixtral-8x7b -b vllm
 ```
 Flags (foreground mode):
   --model,          -m   Model name to publish
-  --backend,        -b   Backend type: ollama | vllm | lmstudio | llamacpp | mlx | custom (default: ollama)
+  --backend,        -b   Backend type: ollama | vllm | lmstudio | llamacpp | mlx (default: ollama)
   --backend-url          Backend endpoint URL (overrides default for the backend type)
   --max-concurrent, -c   Maximum concurrent requests (default: 1)
   --log-file             Path to audit log file (JSON lines)
@@ -246,7 +246,6 @@ For foreground-mode publishing (`cllmhub publish -m <model> -b <backend>`):
 | `lmstudio` | http://localhost:1234  | Desktop app for running local LLMs |
 | `llamacpp` | http://localhost:8080  | CPU-friendly, quantized models |
 | `mlx`      | http://localhost:8080  | Apple Silicon optimized via mlx-lm |
-| `custom`   | (user-specified)       | Any OpenAI-compatible HTTP server |
 
 ## License
 

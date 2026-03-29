@@ -36,7 +36,7 @@ type StatusResponse struct {
 type ModelStatus struct {
 	Name       string `json:"name"`
 	State      string `json:"state"`       // "published", "downloaded", "error"
-	Backend    string `json:"backend"`     // "engine", "ollama", "vllm", "lmstudio", "mlx", "custom"
+	Backend    string `json:"backend"`     // "engine", "ollama", "vllm", "lmstudio", "mlx"
 	ProviderID string `json:"provider_id"` // cLLMHub provider ID
 }
 
@@ -49,7 +49,7 @@ type PublishRequest struct {
 // If BackendType is empty, the model is assumed to be a downloaded GGUF served via the engine.
 type PublishModelSpec struct {
 	Name          string `json:"name"`
-	BackendType   string `json:"backend_type,omitempty"`   // "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "custom", "" (= engine/GGUF)
+	BackendType   string `json:"backend_type,omitempty"`   // "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "" (= engine/GGUF)
 	BackendURL    string `json:"backend_url,omitempty"`    // override default backend URL
 	MaxConcurrent int    `json:"max_concurrent,omitempty"` // max concurrent requests (default 1)
 	Description   string `json:"description,omitempty"`

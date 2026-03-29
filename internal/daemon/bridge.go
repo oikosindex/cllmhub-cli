@@ -17,7 +17,7 @@ import (
 // Bridge wraps a Provider to run inside the daemon.
 type Bridge struct {
 	model       string
-	backendType string // "engine", "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "custom"
+	backendType string // "engine", "ollama", "vllm", "lmstudio", "mlx", "llamacpp"
 	provider    *provider.Provider
 	cancel      context.CancelFunc
 	done        chan struct{}

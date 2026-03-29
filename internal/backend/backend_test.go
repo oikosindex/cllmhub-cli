@@ -93,7 +93,6 @@ func TestNew_ValidTypes(t *testing.T) {
 		{"vllm", "vllm"},
 		{"lmstudio", "lmstudio"},
 		{"mlx", "mlx"},
-		{"custom", "custom"},
 	}
 
 	for _, tc := range cases {

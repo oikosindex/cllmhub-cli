@@ -48,10 +48,10 @@ type Response struct {
 
 // Config holds backend configuration
 type Config struct {
-	Type     string // "ollama", "llamacpp", "vllm", "lmstudio", "mlx", "custom"
-	URL      string
-	Model    string
-	APIKey   string // for custom backends that need auth
+	Type   string // "ollama", "llamacpp", "vllm", "lmstudio", "mlx"
+	URL    string
+	Model  string
+	APIKey string // for backends that need auth
 }
 
 // CheckInsecureAPIKey returns an error if an API key is being sent over
@@ -110,8 +110,6 @@ func New(cfg Config) (Backend, error) {
 		return NewLMStudio(cfg)
 	case "mlx":
 		return NewMLX(cfg)
-	case "custom":
-		return NewCustom(cfg)
 	default:
 		return nil, fmt.Errorf("unknown backend type: %s", cfg.Type)
 	}

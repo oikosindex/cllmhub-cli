@@ -30,7 +30,7 @@ engine and bridge services. The terminal is never blocked.
 Positional arguments publish downloaded GGUF models via the local engine.
 Use -m/-b flags to publish models served by an external backend (Ollama, vLLM, etc.).
 
-Supported backends: ollama, llama.cpp, vllm, lmstudio, mlx, custom`,
+Supported backends: ollama, llama.cpp, vllm, lmstudio, mlx`,
 	Example: `  # Publish downloaded models via engine
   cllmhub publish llama3-8b mistral-7b
 
@@ -44,7 +44,7 @@ Supported backends: ollama, llama.cpp, vllm, lmstudio, mlx, custom`,
 
 func init() {
 	publishCmd.Flags().StringVarP(&publishModel, "model", "m", "", "Model name to publish")
-	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, lmstudio, mlx, custom")
+	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, lmstudio, mlx")
 	publishCmd.Flags().StringVar(&publishBackendURL, "backend-url", "", "Backend endpoint URL (overrides default for the backend type)")
 	publishCmd.Flags().StringVarP(&publishDescription, "description", "d", "", "Model description")
 	publishCmd.Flags().IntVarP(&publishMaxConcurrent, "max-concurrent", "c", 1, "Maximum concurrent requests")
