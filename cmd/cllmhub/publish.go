@@ -213,13 +213,18 @@ func printPublishResults(resp *daemon.PublishResponse, err error) error {
 
 	var failures int
 	for _, r := range resp.Results {
+		status := "published"
 		if r.Already {
-			fmt.Printf("%-20s already published\n", r.Model)
-		} else if r.Success {
-			fmt.Printf("%-20s published\n", r.Model)
-		} else {
+			status = "already published"
+		} else if !r.Success {
 			fmt.Printf("%-20s error: %s\n", r.Model, r.Error)
 			failures++
+			continue
+		}
+		if r.ProviderID != "" {
+			fmt.Printf("%-20s %s (%s)\n", r.Model, status, r.ProviderID)
+		} else {
+			fmt.Printf("%-20s %s\n", r.Model, status)
 		}
 	}
 

@@ -66,10 +66,11 @@ type PublishResponse struct {
 
 // PublishResult is the result for a single model publish.
 type PublishResult struct {
-	Model   string `json:"model"`
-	Success bool   `json:"success"`
-	Already bool   `json:"already,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Model      string `json:"model"`
+	Success    bool   `json:"success"`
+	Already    bool   `json:"already,omitempty"`
+	ProviderID string `json:"provider_id,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // Daemon is the background process that manages engine and bridge services.
@@ -344,6 +345,28 @@ func (d *Daemon) handlePublish(w http.ResponseWriter, r *http.Request) {
 			result.Success = true
 		}
 		resp.Results = append(resp.Results, result)
+	}
+
+	// Wait briefly for provider IDs to be assigned by the hub.
+	for attempt := 0; attempt < 10; attempt++ {
+		allResolved := true
+		for _, r := range resp.Results {
+			if r.Success && d.bridges.ProviderID(r.Model) == "" {
+				allResolved = false
+				break
+			}
+		}
+		if allResolved {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Fill in provider IDs.
+	for i := range resp.Results {
+		if resp.Results[i].Success {
+			resp.Results[i].ProviderID = d.bridges.ProviderID(resp.Results[i].Model)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

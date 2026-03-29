@@ -272,6 +272,18 @@ func (bm *BridgeManager) StopAll() {
 	}
 }
 
+// ProviderID returns the hub provider ID for a published model.
+// Returns empty string if the model is not published or not yet registered.
+func (bm *BridgeManager) ProviderID(model string) string {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+	b, ok := bm.bridges[model]
+	if !ok || b.provider == nil {
+		return ""
+	}
+	return b.provider.Status().ProviderID
+}
+
 // IsPublished checks if a model is currently published.
 func (bm *BridgeManager) IsPublished(model string) bool {
 	bm.mu.RLock()
