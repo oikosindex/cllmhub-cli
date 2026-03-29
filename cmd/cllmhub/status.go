@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/cllmhub/cllmhub-cli/internal/daemon"
-	"github.com/cllmhub/cllmhub-cli/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -41,27 +40,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Println("\nNo published models")
 	} else {
 		fmt.Println("\nPublished models:")
-		registry, _ := models.LoadRegistry()
 		for _, m := range status.Models {
-			alias := ""
-			if registry != nil {
-				if entry, ok := registry.Get(m.Name); ok {
-					alias = entry.Alias
-				}
-			}
 			backendLabel := m.Backend
 			if backendLabel == "" {
 				backendLabel = "engine"
 			}
-			providerLabel := "-"
 			if m.ProviderID != "" {
-				providerLabel = fmt.Sprintf("provider:%s", m.ProviderID)
-			}
-			stateStr := fmt.Sprintf("%s (%s)", m.State, backendLabel)
-			if alias != "" {
-				fmt.Printf("  %-6s %-20s %-20s %s\n", alias, m.Name, providerLabel, stateStr)
+				fmt.Printf("  %-20s %s (provider:%s, %s)\n", m.Name, m.State, m.ProviderID, backendLabel)
 			} else {
-				fmt.Printf("  %-6s %-20s %-20s %s\n", "-", m.Name, providerLabel, stateStr)
+				fmt.Printf("  %-20s %s (%s)\n", m.Name, m.State, backendLabel)
 			}
 		}
 	}
