@@ -203,6 +203,7 @@ Flags (foreground mode):
   --model,          -m   Model name to publish
   --backend,        -b   Backend type: ollama | vllm | lmstudio | llamacpp | mlx (default: ollama)
   --backend-url          Backend endpoint URL (overrides default for the backend type)
+  --max-concurrent, -c   Maximum concurrent requests (0 = auto-detect, default: 0)
   --log-file             Path to audit log file (JSON lines)
   --rate-limit           Max requests per minute (0 = unlimited)
 ```

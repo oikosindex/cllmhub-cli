@@ -290,6 +290,18 @@ func (c *HubClient) SendError(requestID, message string) error {
 	return c.writeJSON(msg)
 }
 
+// UpdateMaxConcurrent notifies the hub of a new max_concurrent value.
+func (c *HubClient) UpdateMaxConcurrent(maxConcurrent int) error {
+	c.maxConcurrent = maxConcurrent
+	msg := map[string]interface{}{
+		"type":           MsgTypeHeartbeat,
+		"provider_id":    c.providerID,
+		"model":          c.model,
+		"max_concurrent": maxConcurrent,
+	}
+	return c.writeJSON(msg)
+}
+
 // SendHeartbeat sends a heartbeat to the gateway.
 func (c *HubClient) SendHeartbeat(queueDepth int, gpuUtil float64) error {
 	return c.SendHeartbeatWithToken(queueDepth, gpuUtil, "")

@@ -48,10 +48,11 @@ type PublishRequest struct {
 // PublishModelSpec describes a model to publish, with optional external backend info.
 // If BackendType is empty, the model is assumed to be a downloaded GGUF served via the engine.
 type PublishModelSpec struct {
-	Name        string `json:"name"`
-	BackendType string `json:"backend_type,omitempty"` // "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "" (= engine/GGUF)
-	BackendURL  string `json:"backend_url,omitempty"`  // override default backend URL
-	Description string `json:"description,omitempty"`
+	Name          string `json:"name"`
+	BackendType   string `json:"backend_type,omitempty"`   // "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "" (= engine/GGUF)
+	BackendURL    string `json:"backend_url,omitempty"`    // override default backend URL
+	MaxConcurrent int    `json:"max_concurrent,omitempty"` // 0 = auto-detect on first request
+	Description   string `json:"description,omitempty"`
 }
 
 // UnpublishRequest is the body for POST /api/unpublish.

@@ -31,6 +31,9 @@ type Provider struct {
 	startTime      time.Time
 	modelServerUp  bool
 
+	autoDetectSlots bool      // true when MaxConcurrent was 0 (auto-detect)
+	slotsOnce       sync.Once // lazy-detect concurrent slots on first request
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -71,9 +74,11 @@ func New(cfg Config) (*Provider, error) {
 
 	providerID := uuid.New().String()[:8]
 
+	// MaxConcurrent 0 means auto-detect on first request; register with 1 initially.
 	maxConcurrent := cfg.MaxConcurrent
-	if maxConcurrent < 1 {
-		maxConcurrent = 1
+	registerConcurrent := maxConcurrent
+	if registerConcurrent < 1 {
+		registerConcurrent = 1
 	}
 
 	hubCfg := hub.ConnectConfig{
@@ -82,7 +87,7 @@ func New(cfg Config) (*Provider, error) {
 		Model:         cfg.Model,
 		Backend:       cfg.Backend.Type,
 		Description:   cfg.Description,
-		MaxConcurrent: maxConcurrent,
+		MaxConcurrent: registerConcurrent,
 		Token:         cfg.Token,
 	}
 
@@ -93,16 +98,17 @@ func New(cfg Config) (*Provider, error) {
 	}
 
 	p := &Provider{
-		id:            providerID,
-		model:         cfg.Model,
-		description:   cfg.Description,
-		backend:       b,
-		hub:           hubClient,
-		hubCfg:        hubCfg,
-		startTime:      time.Now(),
-		modelServerUp:  true,
-		tokenMgr:       cfg.TokenManager,
-		logger:         cfg.Logger,
+		id:              providerID,
+		model:           cfg.Model,
+		description:     cfg.Description,
+		backend:         b,
+		hub:             hubClient,
+		hubCfg:          hubCfg,
+		startTime:       time.Now(),
+		modelServerUp:   true,
+		autoDetectSlots: maxConcurrent < 1,
+		tokenMgr:        cfg.TokenManager,
+		logger:          cfg.Logger,
 	}
 
 	// Give the hub client access to fresh tokens for HTTP requests (alerts).
@@ -323,8 +329,32 @@ func (p *Provider) Stop() {
 	p.audit.Close()
 }
 
+// detectSlots probes the backend for concurrent slot count and updates the hub.
+func (p *Provider) detectSlots() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	slots, err := p.backend.ConcurrentSlots(ctx)
+	if err != nil || slots <= 1 {
+		return
+	}
+
+	p.logf("✓ Detected %d concurrent slots\n", slots)
+	p.hubCfg.MaxConcurrent = slots
+	if err := p.hub.UpdateMaxConcurrent(slots); err != nil {
+		p.logf("⚠ Failed to update hub with detected slots: %v\n", err)
+	}
+}
+
 // handleRequest processes incoming inference requests from the hub
 func (p *Provider) handleRequest(req hub.RequestMsg) {
+	// Lazy-detect concurrent slots on first request.
+	if p.autoDetectSlots {
+		p.slotsOnce.Do(func() {
+			go p.detectSlots()
+		})
+	}
+
 	// Reject requests while model server is down
 	p.mu.Lock()
 	up := p.modelServerUp

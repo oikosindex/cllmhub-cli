@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	publishModel       string
-	publishBackend     string
-	publishBackendURL  string
-	publishDescription string
+	publishModel         string
+	publishBackend       string
+	publishBackendURL    string
+	publishDescription   string
+	publishMaxConcurrent int
 )
 
 var publishCmd = &cobra.Command{
@@ -46,6 +47,7 @@ func init() {
 	publishCmd.Flags().StringVarP(&publishBackend, "backend", "b", "ollama", "Backend type: ollama, llama.cpp, vllm, lmstudio, mlx")
 	publishCmd.Flags().StringVar(&publishBackendURL, "backend-url", "", "Backend endpoint URL (overrides default for the backend type)")
 	publishCmd.Flags().StringVarP(&publishDescription, "description", "d", "", "Model description")
+	publishCmd.Flags().IntVarP(&publishMaxConcurrent, "max-concurrent", "c", 0, "Maximum concurrent requests (0 = auto-detect)")
 }
 
 // publishableModel represents a model that can be published, from any source.
@@ -66,7 +68,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		if publishModel == "" {
 			return fmt.Errorf("model name is required: use -m <model>")
 		}
-		return publishExternalViaDaemon(publishModel, publishBackend, publishBackendURL, publishDescription)
+		return publishExternalViaDaemon(publishModel, publishBackend, publishBackendURL, publishDescription, publishMaxConcurrent)
 	}
 
 	// Interactive TUI selection
@@ -91,7 +93,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 			return publishViaDaemon([]string{selected.name})
 		}
 
-		return publishExternalViaDaemon(selected.name, selected.source, publishBackendURL, publishDescription)
+		return publishExternalViaDaemon(selected.name, selected.source, publishBackendURL, publishDescription, publishMaxConcurrent)
 	}
 }
 
@@ -178,7 +180,7 @@ func publishViaDaemon(modelNames []string) error {
 }
 
 // publishExternalViaDaemon publishes a model served by an external backend through the daemon.
-func publishExternalViaDaemon(model, backendType, backendURL, description string) error {
+func publishExternalViaDaemon(model, backendType, backendURL, description string, maxConcurrent int) error {
 	if !regexp.MustCompile(`^[a-zA-Z0-9._:/-]+$`).MatchString(model) {
 		return fmt.Errorf("invalid model name %q: only alphanumerics, dots, underscores, colons, slashes, and hyphens are allowed", model)
 	}
@@ -196,10 +198,11 @@ func publishExternalViaDaemon(model, backendType, backendURL, description string
 	}
 
 	spec := daemon.PublishModelSpec{
-		Name:        model,
-		BackendType: backendType,
-		BackendURL:  backendURL,
-		Description: description,
+		Name:          model,
+		BackendType:   backendType,
+		BackendURL:    backendURL,
+		MaxConcurrent: maxConcurrent,
+		Description:   description,
 	}
 
 	fmt.Printf("Publishing %s (backend: %s)...\n", model, backendType)
