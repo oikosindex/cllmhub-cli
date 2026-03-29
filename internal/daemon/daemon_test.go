@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-
-	"github.com/cllmhub/cllmhub-cli/internal/engine"
 )
 
 func TestNewBridgeManager(t *testing.T) {
@@ -48,7 +46,7 @@ func TestBridgeManager_StopAll_Empty(t *testing.T) {
 }
 
 func TestNewDaemon(t *testing.T) {
-	d := New(engine.EngineConfig{})
+	d := New()
 	if d == nil {
 		t.Fatal("expected non-nil daemon")
 	}
@@ -61,7 +59,6 @@ func TestStatusResponse_JSON(t *testing.T) {
 		Models: []ModelStatus{
 			{Name: "model-a", State: "published"},
 		},
-		Engine: "running",
 	}
 	if resp.PID != 1234 {
 		t.Errorf("PID = %d, want 1234", resp.PID)

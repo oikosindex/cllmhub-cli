@@ -14,24 +14,20 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "cllmhub",
-	Short:   "cLLMHub CLI - Turn your local LLM into a production API",
-	Long: `cLLMHub turns your local LLM into a production API.
-Publish models, create tokens, and share access with anyone.
+	Use:   "cllmhub",
+	Short: "cLLMHub CLI - Publish local LLMs to the cLLMHub network",
+	Long: `cLLMHub publishes local LLMs to the cLLMHub network.
+Connect your existing inference backend and share models with anyone.
 
-Quick start with Hugging Face models:
+Quick start:
 
-  1. Search for models:    cllmhub models --search mistral
+  1. Login to cLLMHub:     cllmhub login
 
-  2. Download a model:     cllmhub download TheBloke/Mistral-7B-v0.1-GGUF
+  2. Publish from Ollama:  cllmhub publish -m llama3 -b ollama
 
-  3. Login to cLLMHub:     cllmhub login
+  3. Check status:         cllmhub status
 
-  4. Publish it:           cllmhub publish Mistral-7B-v0.1
-
-Or use an external backend (Ollama, vLLM, LM Studio):
-
-  cllmhub publish -m "llama3-70b" -b ollama`,
+Supported backends: Ollama, vLLM, LM Studio, llama.cpp, MLX`,
 	SilenceUsage: true,
 	Version:      Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -57,6 +53,7 @@ func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.AddCommand(publishCmd)
+	rootCmd.AddCommand(unpublishCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
@@ -67,12 +64,6 @@ func init() {
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(daemonCmd)
-
-	// Model management commands
-	rootCmd.AddCommand(downloadCmd)
-	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(modelsCmd)
-	rootCmd.AddCommand(unpublishCmd)
 	rootCmd.AddCommand(logsCmd)
 }
 

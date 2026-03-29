@@ -34,21 +34,16 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	uptime := time.Duration(status.Uptime) * time.Second
 
 	fmt.Printf("Daemon:  running (PID: %d, uptime: %s)\n", status.PID, formatDuration(uptime))
-	fmt.Printf("Engine:  %s\n", status.Engine)
 
 	if len(status.Models) == 0 {
 		fmt.Println("\nNo published models")
 	} else {
 		fmt.Println("\nPublished models:")
 		for _, m := range status.Models {
-			backendLabel := m.Backend
-			if backendLabel == "" {
-				backendLabel = "engine"
-			}
 			if m.ProviderID != "" {
-				fmt.Printf("  %-20s %s (provider:%s, %s)\n", m.Name, m.State, m.ProviderID, backendLabel)
+				fmt.Printf("  %-20s %s (provider:%s, %s)\n", m.Name, m.State, m.ProviderID, m.Backend)
 			} else {
-				fmt.Printf("  %-20s %s (%s)\n", m.Name, m.State, backendLabel)
+				fmt.Printf("  %-20s %s (%s)\n", m.Name, m.State, m.Backend)
 			}
 		}
 	}

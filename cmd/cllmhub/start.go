@@ -4,38 +4,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"time"
 
 	"github.com/cllmhub/cllmhub-cli/internal/daemon"
-	"github.com/cllmhub/cllmhub-cli/internal/engine"
 	"github.com/spf13/cobra"
 )
 
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the cLLMHub daemon",
-	Long: `Start the cLLMHub daemon with configurable engine settings.
+	Long: `Start the cLLMHub daemon.
 
-Engine flags control how llama-server runs. If not specified, defaults are
-auto-detected based on your hardware (Apple Silicon, NVIDIA GPU, or CPU).`,
-	Example: `  # Start with auto-detected defaults
-  cllmhub start
-
-  # Start with custom settings
-  cllmhub start --ctx-size 8192 --flash-attn --slots 2
-
-  # Start for CPU-only inference
-  cllmhub start --n-gpu-layers 0 --ctx-size 2048 --slots 1`,
-	RunE: runStart,
-}
-
-func init() {
-	startCmd.Flags().Int("ctx-size", 0, "Context size for inference (0=auto-detect based on hardware)")
-	startCmd.Flags().Bool("flash-attn", false, "Enable flash attention (auto-enabled on Apple Silicon/NVIDIA)")
-	startCmd.Flags().Int("slots", 0, "Number of concurrent inference slots (0=auto-detect)")
-	startCmd.Flags().Int("n-gpu-layers", -1, "Number of layers to offload to GPU (-1=auto, 0=CPU only)")
-	startCmd.Flags().Int("batch-size", 0, "Batch size for prompt processing (0=auto-detect)")
+The daemon manages model publishing bridges that connect external backends
+(Ollama, vLLM, LM Studio, MLX, llama.cpp) to the cLLMHub network.`,
+	Example: `  cllmhub start`,
+	RunE:    runStart,
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
@@ -43,27 +26,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if running, pid := daemon.IsRunning(); running {
 		fmt.Printf("Daemon is already running (PID: %d)\n", pid)
 		return nil
-	}
-
-	// Detect hardware defaults, then override with any user-specified flags
-	cfg, _ := engine.DetectDefaults()
-
-	if cmd != nil {
-		if cmd.Flags().Changed("ctx-size") {
-			cfg.CtxSize, _ = cmd.Flags().GetInt("ctx-size")
-		}
-		if cmd.Flags().Changed("flash-attn") {
-			cfg.FlashAttn, _ = cmd.Flags().GetBool("flash-attn")
-		}
-		if cmd.Flags().Changed("slots") {
-			cfg.Slots, _ = cmd.Flags().GetInt("slots")
-		}
-		if cmd.Flags().Changed("n-gpu-layers") {
-			cfg.NGPULayers, _ = cmd.Flags().GetInt("n-gpu-layers")
-		}
-		if cmd.Flags().Changed("batch-size") {
-			cfg.BatchSize, _ = cmd.Flags().GetInt("batch-size")
-		}
 	}
 
 	// Open log file for daemon stdout/stderr
@@ -82,21 +44,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer logFile.Close()
 
-	// Re-exec self with hidden __daemon command, forwarding resolved config
+	// Re-exec self with hidden __daemon command
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot find executable path: %w", err)
 	}
 
-	daemonArgs := []string{"__daemon",
-		"--ctx-size", strconv.Itoa(cfg.CtxSize),
-		"--flash-attn", strconv.FormatBool(cfg.FlashAttn),
-		"--slots", strconv.Itoa(cfg.Slots),
-		"--n-gpu-layers", strconv.Itoa(cfg.NGPULayers),
-		"--batch-size", strconv.Itoa(cfg.BatchSize),
-	}
-
-	daemonProcess := exec.Command(executable, daemonArgs...)
+	daemonProcess := exec.Command(executable, "__daemon")
 	daemonProcess.Stdout = logFile
 	daemonProcess.Stderr = logFile
 	setDetachedProcess(daemonProcess)

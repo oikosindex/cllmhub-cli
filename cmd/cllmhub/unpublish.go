@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/cllmhub/cllmhub-cli/internal/daemon"
-	"github.com/cllmhub/cllmhub-cli/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -19,15 +18,6 @@ func runUnpublish(cmd *cobra.Command, args []string) error {
 	running, _ := daemon.IsRunning()
 	if !running {
 		return fmt.Errorf("daemon is not running — no models are published")
-	}
-
-	// Resolve aliases to full model names.
-	if registry, err := models.LoadRegistry(); err == nil {
-		for i, name := range args {
-			if resolved, ok := registry.ResolveAlias(name); ok {
-				args[i] = resolved
-			}
-		}
 	}
 
 	client, err := daemon.NewClient()

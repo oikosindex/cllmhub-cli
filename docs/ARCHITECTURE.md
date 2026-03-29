@@ -2,7 +2,7 @@
 
 ## Overview
 
-cLLMHub CLI is a Go command-line tool that downloads, runs, and publishes local LLM models to the cLLMHub hub network. It supports both a persistent daemon mode (running its own llama-server) and a foreground mode (connecting to external backends like Ollama, vLLM, or MLX). Built with Go 1.24 and the Cobra CLI framework.
+cLLMHub CLI is a Go command-line tool that publishes local LLM models to the cLLMHub hub network. It connects to external inference backends (Ollama, vLLM, LM Studio, llama.cpp, MLX) and bridges them to the hub via a persistent daemon. Built with Go 1.24 and the Cobra CLI framework.
 
 ## Project Structure
 
@@ -11,17 +11,13 @@ cllmhub-cli/
 ├── cmd/cllmhub/           # CLI commands (Cobra)
 │   ├── main.go            # Root command, version check setup
 │   ├── login.go           # OAuth device flow authentication
-│   ├── publish.go         # Publish models (daemon or foreground mode)
+│   ├── publish.go         # Publish models via daemon
 │   ├── unpublish.go       # Stop serving published models
 │   ├── start.go           # Start the daemon
 │   ├── stop.go            # Stop the daemon
 │   ├── status.go          # Show daemon status
 │   ├── logs.go            # Show daemon logs
 │   ├── daemon_cmd.go      # Internal daemon process entry point (hidden)
-│   ├── download.go        # Download GGUF models from Hugging Face
-│   ├── delete.go          # Delete downloaded models
-│   ├── models_cmd.go      # List/search models
-│   ├── hf_token.go        # Manage Hugging Face API token
 │   ├── whoami.go          # Display current user
 │   ├── logout.go          # Revoke credentials
 │   └── update.go          # Self-update binary
@@ -30,8 +26,6 @@ cllmhub-cli/
 │   ├── auth/              # Credential storage & OAuth 2.0 device flow
 │   ├── backend/           # LLM backend abstraction layer
 │   ├── daemon/            # Daemon process management & HTTP API
-│   ├── engine/            # llama-server config & hardware detection
-│   ├── models/            # Model registry, HF API, download management
 │   ├── paths/             # Centralized file path management
 │   ├── provider/          # Provider lifecycle & request handling
 │   ├── hub/               # WebSocket client for hub communication
@@ -78,13 +72,12 @@ Supported backends:
 | LM Studio  | `localhost:1234`         | OpenAI-compatible   |
 | Llama.cpp  | `localhost:8080`         | Llama.cpp HTTP      |
 | MLX        | `localhost:8080`         | OpenAI-compatible   |
-| Custom     | User-specified           | Simple JSON         |
 
 A factory function `New()` instantiates the correct backend from a config type string.
 
 ### Daemon (`internal/daemon/`)
 
-Manages a persistent background process that runs llama-server and handles model publishing.
+Manages a persistent background process that handles model publishing via bridges.
 
 - **Unix socket communication**: CLI commands talk to the daemon via `~/.cllmhub/cllmhub.sock`
 - **PID file management**: `~/.cllmhub/daemon.pid` tracks the running process
@@ -93,29 +86,9 @@ Manages a persistent background process that runs llama-server and handles model
   - `GET /api/status` — daemon status and running models
   - `POST /api/publish` — publish a model
   - `POST /api/unpublish` — unpublish a model
+  - `POST /api/reauth` — refresh credentials after re-login
 
 The `__daemon` hidden command is the daemon's entry point, spawned by `cllmhub start`.
-
-### Engine (`internal/engine/`)
-
-Configures and manages the llama-server inference engine.
-
-- **Hardware detection**: Identifies Apple Silicon (with flash attention), NVIDIA GPU, and CPU-only environments
-- **Auto-sizing**: Calculates appropriate context size, slots, batch size, and GPU layers based on detected hardware
-- **Configuration profiles**: Sensible defaults per hardware platform
-- **CLI argument generation**: Converts engine config to llama-server command-line arguments
-
-### Model Registry (`internal/models/`)
-
-Manages downloaded GGUF models and Hugging Face integration.
-
-- **Registry**: `~/.cllmhub/models/registry.json` — tracks all downloaded models with metadata (name, file, repo ID, size, SHA256, state, download time)
-- **Alias generation**: Auto-assigns short aliases (e.g., `m1`, `m2`) for convenience
-- **Hugging Face API**:
-  - Search models (filters by GGUF + text-generation)
-  - List repository files
-  - Download with progress tracking and SHA256 verification
-- **Legacy migration**: Automatically upgrades older registry formats
 
 ### Path Management (`internal/paths/`)
 
@@ -124,13 +97,9 @@ Centralized management of all cLLMHub file system paths:
 | Path | Purpose |
 |------|---------|
 | `~/.cllmhub/` | Main state directory |
-| `~/.cllmhub/models/` | Downloaded GGUF models |
-| `~/.cllmhub/models/registry.json` | Model registry |
 | `~/.cllmhub/logs/` | Daemon logs |
-| `~/.cllmhub/bin/` | Binary storage |
 | `~/.cllmhub/daemon.pid` | Daemon PID file |
 | `~/.cllmhub/cllmhub.sock` | Unix socket for daemon communication |
-| `~/.cllmhub/hf-token` | Hugging Face API token |
 | `~/.cllmhub/credentials` | OAuth credentials |
 
 ### Provider Management (`internal/provider/`)
@@ -142,8 +111,6 @@ Manages the full lifecycle of a published model on the hub:
 3. **Health monitoring** — Periodic checks on the local model server (5 attempts, 60s intervals) with alert system for down/recovered events
 4. **Reconnection** — Auto-reconnect loop (up to 5 attempts, 60s intervals) on connection loss
 5. **Token refresh** — Includes fresh tokens in heartbeats to keep the session alive
-
-Supports both daemon mode (publishing through the daemon's bridge manager) and foreground mode (directly connecting to an external backend).
 
 ### Hub Gateway Client (`internal/hub/`)
 
@@ -177,17 +144,12 @@ Non-blocking background check against the GitHub releases API with 24-hour cachi
 ```
 cllmhub
   ├── login        OAuth device flow → discover local models → optionally publish
-  ├── publish      Daemon mode: publish GGUF via daemon bridge
-  │                Foreground mode: connect backend → register → handle requests
+  ├── publish      Discover backends → select model → publish via daemon bridge
   ├── unpublish    Tell daemon to stop serving models
-  ├── start        Spawn daemon process (llama-server + HTTP API)
+  ├── start        Spawn daemon process (bridge manager + HTTP API)
   ├── stop         Send shutdown signal to daemon
   ├── status       Query daemon HTTP API for status
   ├── logs         Read/tail daemon log file
-  ├── download     Fetch GGUF from Hugging Face → register in model registry
-  ├── delete       Remove model files and registry entries
-  ├── models       List local models or search Hugging Face
-  ├── hf-token     set | remove | status — manage HF API token
   ├── whoami       Load credentials → display user info
   ├── logout       Revoke token → delete credentials file
   └── update       Check GitHub releases → download & replace binary
@@ -198,13 +160,10 @@ cllmhub
 | Item               | Location                          | Format |
 |--------------------|-----------------------------------|--------|
 | Credentials        | `~/.cllmhub/credentials`         | JSON   |
-| HF API token       | `~/.cllmhub/hf-token`            | Plain text |
-| Model registry     | `~/.cllmhub/models/registry.json`| JSON   |
 | Daemon PID         | `~/.cllmhub/daemon.pid`          | Plain text |
 | Daemon socket      | `~/.cllmhub/cllmhub.sock`        | Unix socket |
 | Daemon logs        | `~/.cllmhub/logs/daemon.log`     | Plain text |
 | Version check cache| `~/.cllmhub/version-check.json`  | JSON   |
-| Engine settings    | CLI flags on `start` command      | —      |
 | Provider settings  | CLI flags on `publish` command    | —      |
 
 ## Distribution
@@ -226,10 +185,8 @@ cllmhub
 ## Design Patterns
 
 - **Interface-based backends**: Extensible backend system via the `Backend` interface and factory pattern
-- **Daemon architecture**: Background process with Unix socket IPC, enabling multi-model publishing and persistent inference
-- **Hardware auto-detection**: Engine config adapts to Apple Silicon, NVIDIA GPU, or CPU-only environments
+- **Daemon architecture**: Background process with Unix socket IPC, enabling multi-model publishing
 - **Background token management**: Automatic refresh with dead-channel signaling for session invalidation
 - **Context-based cancellation**: `context.Context` propagated throughout for clean shutdown on SIGINT/SIGTERM
 - **Resilient reconnection**: Exponential backoff with health checks before re-registering
 - **Concurrency control**: Semaphore-based max concurrency, mutex-protected shared state, channel-based synchronization
-- **Model registry**: JSON-based local registry with auto-aliasing and SHA256 integrity verification

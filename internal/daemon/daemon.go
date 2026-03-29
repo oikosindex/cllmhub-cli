@@ -20,23 +20,20 @@ import (
 	"time"
 
 	"github.com/cllmhub/cllmhub-cli/internal/auth"
-	"github.com/cllmhub/cllmhub-cli/internal/engine"
-	"github.com/cllmhub/cllmhub-cli/internal/models"
 )
 
 // StatusResponse is returned by GET /api/status.
 type StatusResponse struct {
-	PID     int           `json:"pid"`
-	Uptime  int64         `json:"uptime_seconds"`
-	Models  []ModelStatus `json:"models"`
-	Engine  string        `json:"engine"` // "running", "stopped", "starting", "failed"
+	PID    int           `json:"pid"`
+	Uptime int64         `json:"uptime_seconds"`
+	Models []ModelStatus `json:"models"`
 }
 
 // ModelStatus represents the state of a single model.
 type ModelStatus struct {
 	Name       string `json:"name"`
-	State      string `json:"state"`       // "published", "downloaded", "error"
-	Backend    string `json:"backend"`     // "engine", "ollama", "vllm", "lmstudio", "mlx"
+	State      string `json:"state"`       // "published", "error"
+	Backend    string `json:"backend"`     // "ollama", "vllm", "lmstudio", "mlx", "llamacpp"
 	ProviderID string `json:"provider_id"` // cLLMHub provider ID
 }
 
@@ -45,12 +42,11 @@ type PublishRequest struct {
 	Models []PublishModelSpec `json:"models"`
 }
 
-// PublishModelSpec describes a model to publish, with optional external backend info.
-// If BackendType is empty, the model is assumed to be a downloaded GGUF served via the engine.
+// PublishModelSpec describes a model to publish via an external backend.
 type PublishModelSpec struct {
 	Name          string `json:"name"`
-	BackendType   string `json:"backend_type,omitempty"`   // "ollama", "vllm", "lmstudio", "mlx", "llamacpp", "" (= engine/GGUF)
-	BackendURL    string `json:"backend_url,omitempty"`    // override default backend URL
+	BackendType   string `json:"backend_type"`              // "ollama", "vllm", "lmstudio", "mlx", "llamacpp"
+	BackendURL    string `json:"backend_url,omitempty"`     // override default backend URL
 	BackendAPIKey string `json:"backend_api_key,omitempty"`
 	MaxConcurrent int    `json:"max_concurrent,omitempty"` // 0 = auto-detect on first request
 	Description   string `json:"description,omitempty"`
@@ -75,16 +71,14 @@ type PublishResult struct {
 	Error      string `json:"error,omitempty"`
 }
 
-// Daemon is the background process that manages engine and bridge services.
+// Daemon is the background process that manages bridge services.
 type Daemon struct {
 	mu        sync.RWMutex
 	startTime time.Time
 	logger    *slog.Logger
 	logFile   *os.File
 
-	engineCfg engine.EngineConfig
-	engine    *engine.Engine
-	bridges   *BridgeManager
+	bridges *BridgeManager
 
 	authToken string
 	pidFile   *os.File
@@ -95,12 +89,11 @@ type Daemon struct {
 }
 
 // New creates a new Daemon instance.
-func New(engineCfg engine.EngineConfig) *Daemon {
+func New() *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Daemon{
-		engineCfg: engineCfg,
-		ctx:       ctx,
-		cancel:    cancel,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -115,7 +108,6 @@ func (d *Daemon) Run() error {
 	defer logFile.Close()
 
 	d.startTime = time.Now()
-	d.engine = engine.New(logger, d.engineCfg)
 	d.bridges = NewBridgeManager(logger)
 
 	// Generate and write auth token
@@ -210,7 +202,6 @@ func (d *Daemon) handleStatus(w http.ResponseWriter, r *http.Request) {
 		PID:    os.Getpid(),
 		Uptime: int64(time.Since(d.startTime).Seconds()),
 		Models: []ModelStatus{},
-		Engine: d.engine.State(),
 	}
 
 	// Add published models with backend info
@@ -266,82 +257,14 @@ func (d *Daemon) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Separate engine-backed (GGUF) models from external-backend models.
-	var engineSpecs []PublishModelSpec
-	var externalSpecs []PublishModelSpec
-	for _, spec := range req.Models {
-		if spec.BackendType == "" || spec.BackendType == "engine" {
-			engineSpecs = append(engineSpecs, spec)
-		} else {
-			externalSpecs = append(externalSpecs, spec)
-		}
-	}
-
-	// --- Engine-backed models: validate registry, memory, start engine ---
-	if len(engineSpecs) > 0 {
-		registry, err := models.LoadRegistry()
-		if err != nil {
-			d.logger.Error("failed to load registry", "error", err)
-			http.Error(w, `{"error":"failed to load model registry"}`, http.StatusInternalServerError)
-			return
-		}
-
-		var totalNeeded int64
-		for _, spec := range engineSpecs {
-			entry, ok := registry.Get(spec.Name)
-			if !ok || entry.State != "ready" {
-				http.Error(w, fmt.Sprintf(`{"error":"model %q not downloaded — run 'cllmhub download %s' first"}`, spec.Name, spec.Name), http.StatusBadRequest)
-				return
-			}
-			totalNeeded += entry.SizeBytes
-		}
-
-		var currentUsage int64
-		for _, name := range d.bridges.PublishedModels() {
-			if entry, ok := registry.Get(name); ok {
-				currentUsage += entry.SizeBytes
-			}
-		}
-
-		ok, msg := engine.CanFit(totalNeeded, currentUsage)
-		if !ok {
-			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, msg), http.StatusBadRequest)
-			return
-		}
-
-		if !d.engine.IsRunning() {
-			if err := d.engine.Start(); err != nil {
-				d.logger.Error("failed to start engine", "error", err)
-				http.Error(w, `{"error":"failed to start inference engine"}`, http.StatusInternalServerError)
-				return
-			}
-		}
-	}
-
-	// --- Start bridges ---
 	resp := PublishResponse{Results: make([]PublishResult, 0, len(req.Models))}
 
-	// Engine-backed bridges
-	for _, spec := range engineSpecs {
+	for _, spec := range req.Models {
 		result := PublishResult{Model: spec.Name}
 		if d.bridges.IsPublished(spec.Name) {
 			result.Success = true
 			result.Already = true
-		} else if err := d.bridges.StartBridge(spec.Name, d.engine.Port(), hubURL, token, tokenMgr); err != nil {
-			result.Error = err.Error()
-		} else {
-			result.Success = true
-		}
-		resp.Results = append(resp.Results, result)
-	}
-
-	// External-backend bridges
-	for _, spec := range externalSpecs {
-		result := PublishResult{Model: spec.Name}
-		if d.bridges.IsPublished(spec.Name) {
-			result.Success = true
-			result.Already = true
-		} else if err := d.bridges.StartExternalBridge(spec, hubURL, token, tokenMgr); err != nil {
+		} else if err := d.bridges.StartBridge(spec, hubURL, token, tokenMgr); err != nil {
 			result.Error = err.Error()
 		} else {
 			result.Success = true
@@ -398,12 +321,6 @@ func (d *Daemon) handleUnpublish(w http.ResponseWriter, r *http.Request) {
 		resp.Results = append(resp.Results, result)
 	}
 
-	// Stop engine if no more engine-backed models remain
-	if d.bridges.EngineBackedCount() == 0 && d.engine.IsRunning() {
-		d.engine.Stop()
-		d.logger.Info("engine stopped — no more engine-backed models")
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -413,12 +330,6 @@ func (d *Daemon) handleReauth(w http.ResponseWriter, r *http.Request) {
 	if len(published) > 0 {
 		d.logger.Info("reauth: stopping all bridges for credential refresh", "models", published)
 		d.bridges.StopAll()
-
-		// Stop engine if it was running (bridges are gone)
-		if d.engine.IsRunning() {
-			d.engine.Stop()
-			d.logger.Info("reauth: engine stopped")
-		}
 	}
 
 	d.logger.Info("reauth: credentials refreshed, ready for new publishes")
@@ -434,9 +345,6 @@ func (d *Daemon) shutdown() {
 
 	// Stop all bridges
 	d.bridges.StopAll()
-
-	// Stop engine
-	d.engine.Stop()
 
 	// Gracefully shut down HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
