@@ -399,11 +399,6 @@ func (v *VLLM) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-// ConcurrentSlots probes vLLM with parallel requests to discover concurrency.
-func (v *VLLM) ConcurrentSlots(ctx context.Context) (int, error) {
-	return ProbeConcurrentSlots(ctx, v)
-}
-
 // Health checks if vLLM is available
 func (v *VLLM) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", v.url+"/v1/models", nil)

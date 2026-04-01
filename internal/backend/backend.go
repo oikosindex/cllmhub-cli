@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/url"
 	"syscall"
-	"time"
 )
 
 // Backend defines the interface for LLM inference backends
@@ -32,10 +31,6 @@ type Backend interface {
 	// Returns nil, nil if the backend does not support listing.
 	ListModels(ctx context.Context) ([]string, error)
 
-	// ConcurrentSlots queries the backend for the number of concurrent
-	// inference slots it can handle. Returns 0 if the backend does not
-	// expose this information.
-	ConcurrentSlots(ctx context.Context) (int, error)
 }
 
 // Request represents an inference request to a backend
@@ -105,95 +100,6 @@ func IsConnectionError(err error) bool {
 	return false
 }
 
-// ProbeConcurrentSlots discovers the number of concurrent slots a backend
-// supports by sending parallel 1-token requests and measuring wall-clock time.
-//
-// It first sends a single request to establish baseline latency, then sends
-// batches of 2, 4, 8, … concurrent requests to find the rough ceiling. Once
-// a batch exceeds 1.5× the baseline, it binary-searches between the last good
-// and first bad batch sizes to find the exact slot count.
-//
-// Returns 0 if the baseline request fails (backend may be down or model not loaded).
-func ProbeConcurrentSlots(ctx context.Context, b Backend) (int, error) {
-	const maxProbe = 10
-
-	probe := &Request{
-		Prompt:    "hi",
-		MaxTokens: 1,
-	}
-
-	// Baseline: single request latency.
-	start := timeNow()
-	if _, err := b.Complete(ctx, probe); err != nil {
-		return 0, nil
-	}
-	baseline := timeSince(start)
-
-	// Threshold: if a batch takes longer than this, requests were queued.
-	threshold := baseline * 3 / 2 // 1.5× baseline
-
-	// probeBatch sends n concurrent requests and returns true if they all
-	// completed within the threshold (i.e. ran in parallel).
-	probeBatch := func(n int) bool {
-		batchCtx, cancel := context.WithTimeout(ctx, baseline*time.Duration(n+1))
-		defer cancel()
-
-		errs := make(chan error, n)
-		batchStart := timeNow()
-		for i := 0; i < n; i++ {
-			go func() {
-				_, err := b.Complete(batchCtx, probe)
-				errs <- err
-			}()
-		}
-
-		failed := false
-		for i := 0; i < n; i++ {
-			if err := <-errs; err != nil {
-				failed = true
-			}
-		}
-		elapsed := timeSince(batchStart)
-
-		return !failed && elapsed <= threshold
-	}
-
-	// Phase 1: scan upward in powers of 2 to find the ceiling.
-	lastGood := 1
-	firstBad := 0
-	for n := 2; n <= maxProbe; n *= 2 {
-		if probeBatch(n) {
-			lastGood = n
-		} else {
-			firstBad = n
-			break
-		}
-	}
-
-	// All batches passed — backend handles maxProbe concurrent requests.
-	if firstBad == 0 {
-		return lastGood, nil
-	}
-
-	// Phase 2: binary search between lastGood and firstBad for exact count.
-	lo, hi := lastGood, firstBad
-	for lo+1 < hi {
-		mid := (lo + hi) / 2
-		if probeBatch(mid) {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-
-	return lo, nil
-}
-
-// timeNow and timeSince are variables so tests can override them.
-var (
-	timeNow   = time.Now
-	timeSince = time.Since
-)
 
 // openAIChatRequest is the OpenAI-compatible chat completions request format.
 // Used by vLLM, llama.cpp, LM Studio, and MLX when messages are present.

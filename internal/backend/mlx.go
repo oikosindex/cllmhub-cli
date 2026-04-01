@@ -373,11 +373,6 @@ func (m *MLX) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-// ConcurrentSlots probes MLX with parallel requests to discover concurrency.
-func (m *MLX) ConcurrentSlots(ctx context.Context) (int, error) {
-	return ProbeConcurrentSlots(ctx, m)
-}
-
 // Health checks if the mlx-lm server is available
 func (m *MLX) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", m.url+"/v1/models", nil)

@@ -461,12 +461,6 @@ func (o *Ollama) Health(ctx context.Context) error {
 		o.model, formatModelList(available), o.model)
 }
 
-// ConcurrentSlots discovers how many parallel requests the Ollama model can
-// handle by probing the backend with concurrent requests.
-func (o *Ollama) ConcurrentSlots(ctx context.Context) (int, error) {
-	return ProbeConcurrentSlots(ctx, o)
-}
-
 // ListModels returns all models available in Ollama.
 func (o *Ollama) ListModels(ctx context.Context) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", o.url+"/api/tags", nil)

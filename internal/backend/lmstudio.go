@@ -373,11 +373,6 @@ func (l *LMStudio) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-// ConcurrentSlots probes LM Studio with parallel requests to discover concurrency.
-func (l *LMStudio) ConcurrentSlots(ctx context.Context) (int, error) {
-	return ProbeConcurrentSlots(ctx, l)
-}
-
 // Health checks if LM Studio is available
 func (l *LMStudio) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", l.url+"/v1/models", nil)

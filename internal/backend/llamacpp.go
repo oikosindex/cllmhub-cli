@@ -326,32 +326,6 @@ func (l *LlamaCpp) ListModels(ctx context.Context) ([]string, error) {
 	return nil, nil
 }
 
-// ConcurrentSlots queries the llama.cpp /slots endpoint to determine
-// how many concurrent inference slots the server is configured with.
-func (l *LlamaCpp) ConcurrentSlots(ctx context.Context) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", l.url+"/slots", nil)
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := l.client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("llama.cpp /slots not reachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("llama.cpp /slots returned status %d", resp.StatusCode)
-	}
-
-	var slots []json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&slots); err != nil {
-		return 0, fmt.Errorf("failed to parse /slots response: %w", err)
-	}
-
-	return len(slots), nil
-}
-
 // Health checks if llama.cpp server is available
 func (l *LlamaCpp) Health(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", l.url+"/health", nil)
