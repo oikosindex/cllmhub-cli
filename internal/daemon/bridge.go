@@ -26,13 +26,15 @@ type BridgeManager struct {
 	mu      sync.RWMutex
 	bridges map[string]*Bridge
 	logger  *slog.Logger
+	watch   bool
 }
 
 // NewBridgeManager creates a new bridge manager.
-func NewBridgeManager(logger *slog.Logger) *BridgeManager {
+func NewBridgeManager(logger *slog.Logger, watch bool) *BridgeManager {
 	return &BridgeManager{
 		bridges: make(map[string]*Bridge),
 		logger:  logger,
+		watch:   watch,
 	}
 }
 
@@ -74,6 +76,7 @@ func (bm *BridgeManager) StartBridge(spec PublishModelSpec, hubURL, token string
 		HubURL:       hubURL,
 		TokenManager: tokenMgr,
 		Logger:       bm.logger,
+		Watch:        bm.watch,
 	}
 
 	p, err := provider.New(cfg)

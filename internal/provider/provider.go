@@ -33,6 +33,7 @@ type Provider struct {
 
 	autoDetectSlots bool      // true when MaxConcurrent was 0 (auto-detect)
 	slotsOnce       sync.Once // lazy-detect concurrent slots on first request
+	watch           bool      // proactively watch backend health
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -55,6 +56,7 @@ type Config struct {
 	RateLimit     int // requests per minute, 0 = unlimited
 	TokenManager  *auth.TokenManager
 	Logger        *slog.Logger // optional; if nil, prints to stdout
+	Watch         bool         // proactively watch backend health
 }
 
 // New creates a new provider instance
@@ -107,6 +109,7 @@ func New(cfg Config) (*Provider, error) {
 		startTime:       time.Now(),
 		modelServerUp:   true,
 		autoDetectSlots: maxConcurrent < 1,
+		watch:           cfg.Watch,
 		tokenMgr:        cfg.TokenManager,
 		logger:          cfg.Logger,
 	}
@@ -157,8 +160,10 @@ func (p *Provider) Start(ctx context.Context) error {
 	}
 
 	// Start proactive health check loop — detects backend going down
-	// even when no requests are flowing.
-	go p.healthCheckLoop()
+	// even when no requests are flowing. Only runs with --watch flag.
+	if p.watch {
+		go p.healthCheckLoop()
+	}
 
 	// Send initial heartbeat so the provider is immediately visible.
 	p.sendHeartbeat()

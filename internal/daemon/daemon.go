@@ -71,12 +71,18 @@ type PublishResult struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// Options holds configuration for the daemon.
+type Options struct {
+	Watch bool // Proactively watch backend health and unpublish unreachable models
+}
+
 // Daemon is the background process that manages bridge services.
 type Daemon struct {
 	mu        sync.RWMutex
 	startTime time.Time
 	logger    *slog.Logger
 	logFile   *os.File
+	watch     bool
 
 	bridges *BridgeManager
 
@@ -89,11 +95,12 @@ type Daemon struct {
 }
 
 // New creates a new Daemon instance.
-func New() *Daemon {
+func New(opts Options) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Daemon{
 		ctx:    ctx,
 		cancel: cancel,
+		watch:  opts.Watch,
 	}
 }
 
@@ -108,7 +115,7 @@ func (d *Daemon) Run() error {
 	defer logFile.Close()
 
 	d.startTime = time.Now()
-	d.bridges = NewBridgeManager(logger)
+	d.bridges = NewBridgeManager(logger, d.watch)
 
 	// Generate and write auth token
 	if err := d.writeAuthToken(); err != nil {

@@ -10,15 +10,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var startWatch bool
+
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the cLLMHub daemon",
 	Long: `Start the cLLMHub daemon.
 
 The daemon manages model publishing bridges that connect external backends
-(Ollama, vLLM, LM Studio, MLX, llama.cpp) to the cLLMHub network.`,
-	Example: `  cllmhub start`,
-	RunE:    runStart,
+(Ollama, vLLM, LM Studio, MLX, llama.cpp) to the cLLMHub network.
+
+By default, models are unpublished only when a client request fails to reach
+the backend. Use --watch to proactively monitor backend health and unpublish
+unreachable models even when no requests are flowing.`,
+	Example: `  cllmhub start
+  cllmhub start --watch`,
+	RunE: runStart,
+}
+
+func init() {
+	startCmd.Flags().BoolVarP(&startWatch, "watch", "w", false, "Proactively watch backend health and unpublish unreachable models")
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
@@ -50,7 +61,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot find executable path: %w", err)
 	}
 
-	daemonProcess := exec.Command(executable, "__daemon")
+	daemonArgs := []string{"__daemon"}
+	if startWatch {
+		daemonArgs = append(daemonArgs, "--watch")
+	}
+	daemonProcess := exec.Command(executable, daemonArgs...)
 	daemonProcess.Stdout = logFile
 	daemonProcess.Stderr = logFile
 	setDetachedProcess(daemonProcess)

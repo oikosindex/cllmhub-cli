@@ -8,7 +8,7 @@ import (
 
 func TestNewBridgeManager(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	bm := NewBridgeManager(logger)
+	bm := NewBridgeManager(logger, false)
 
 	if bm.Count() != 0 {
 		t.Errorf("Count = %d, want 0", bm.Count())
@@ -20,7 +20,7 @@ func TestNewBridgeManager(t *testing.T) {
 
 func TestBridgeManager_IsPublished(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	bm := NewBridgeManager(logger)
+	bm := NewBridgeManager(logger, false)
 
 	if bm.IsPublished("any-model") {
 		t.Error("expected false for unpublished model")
@@ -29,7 +29,7 @@ func TestBridgeManager_IsPublished(t *testing.T) {
 
 func TestBridgeManager_StopBridge_NotPublished(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	bm := NewBridgeManager(logger)
+	bm := NewBridgeManager(logger, false)
 
 	err := bm.StopBridge("missing")
 	if err == nil {
@@ -39,14 +39,14 @@ func TestBridgeManager_StopBridge_NotPublished(t *testing.T) {
 
 func TestBridgeManager_StopAll_Empty(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	bm := NewBridgeManager(logger)
+	bm := NewBridgeManager(logger, false)
 
 	// Should not panic
 	bm.StopAll()
 }
 
 func TestNewDaemon(t *testing.T) {
-	d := New()
+	d := New(Options{})
 	if d == nil {
 		t.Fatal("expected non-nil daemon")
 	}
