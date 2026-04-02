@@ -72,10 +72,11 @@ func (bm *BridgeManager) StartBridge(spec PublishModelSpec, hubURL, token string
 			Model:  spec.Name,
 			APIKey: spec.BackendAPIKey,
 		},
-		HubURL:       hubURL,
-		TokenManager: tokenMgr,
-		Logger:       bm.logger,
-		Watch:        bm.watch,
+		HubURL:        hubURL,
+		MaxConcurrent: spec.MaxConcurrent,
+		TokenManager:  tokenMgr,
+		Logger:        bm.logger,
+		Watch:         bm.watch,
 	}
 
 	p, err := provider.New(cfg)

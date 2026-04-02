@@ -16,6 +16,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
+const (
+	defaultMaxSlots = 5 // default ceiling for concurrent slots
+	// Number of consecutive successes at current max before increasing slots.
+	rampUpThreshold = 3
+	// Cooldown after a slot reduction before allowing increases.
+	slotCooldown = 30 * time.Second
+)
+
 // Provider manages the lifecycle of a published model
 type Provider struct {
 	id          string
@@ -32,6 +40,14 @@ type Provider struct {
 	startTime     time.Time
 	modelServerUp bool
 
+	// AIMD concurrency control
+	maxSlots          int       // current slot limit (reported to hub)
+	slotCeiling       int       // upper bound (user hint or default)
+	consecutiveAtMax  int       // consecutive successes while running at maxSlots
+	lastSlotReduction time.Time // cooldown timer after reductions
+	slots             chan struct{} // semaphore for local enforcement
+	updateHubSlots    func(int) error // sends slot update to hub; nil-safe
+
 	watch bool // proactively watch backend health
 
 	ctx    context.Context
@@ -45,16 +61,17 @@ type Provider struct {
 
 // Config holds provider configuration
 type Config struct {
-	Model        string
-	Description  string
-	Token        string
-	Backend      backend.Config
-	HubURL       string
-	LogFile      string
-	RateLimit    int // requests per minute, 0 = unlimited
-	TokenManager *auth.TokenManager
-	Logger       *slog.Logger // optional; if nil, prints to stdout
-	Watch        bool         // proactively watch backend health
+	Model         string
+	Description   string
+	Token         string
+	Backend       backend.Config
+	HubURL        string
+	LogFile       string
+	RateLimit     int // requests per minute, 0 = unlimited
+	MaxConcurrent int // optional ceiling hint; 0 = use default (5)
+	TokenManager  *auth.TokenManager
+	Logger        *slog.Logger // optional; if nil, prints to stdout
+	Watch         bool         // proactively watch backend health
 }
 
 // New creates a new provider instance
@@ -74,15 +91,26 @@ func New(cfg Config) (*Provider, error) {
 
 	providerID := uuid.New().String()[:8]
 
-	// Register with 10 concurrent slots initially; the provider will
-	// adjust downward based on live traffic if the backend can't handle it.
+	// Determine slot ceiling: user hint or default.
+	slotCeiling := defaultMaxSlots
+	if cfg.MaxConcurrent > 0 {
+		slotCeiling = cfg.MaxConcurrent
+	}
+
+	// Start conservative at 1 slot; AIMD ramps up from live traffic.
+	initialSlots := 1
+	if cfg.MaxConcurrent > 0 {
+		// User provided an explicit hint — trust it and start there.
+		initialSlots = cfg.MaxConcurrent
+	}
+
 	hubCfg := hub.ConnectConfig{
 		HubURL:        cfg.HubURL,
 		ProviderID:    providerID,
 		Model:         cfg.Model,
 		Backend:       cfg.Backend.Type,
 		Description:   cfg.Description,
-		MaxConcurrent: 10,
+		MaxConcurrent: initialSlots,
 		Token:         cfg.Token,
 	}
 
@@ -101,6 +129,10 @@ func New(cfg Config) (*Provider, error) {
 		hubCfg:        hubCfg,
 		startTime:     time.Now(),
 		modelServerUp: true,
+		maxSlots:      initialSlots,
+		slotCeiling:   slotCeiling,
+		slots:         make(chan struct{}, initialSlots),
+		updateHubSlots: hubClient.UpdateMaxConcurrent,
 		watch:         cfg.Watch,
 		tokenMgr:      cfg.TokenManager,
 		logger:        cfg.Logger,
@@ -136,7 +168,7 @@ func (p *Provider) Start(ctx context.Context) error {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	p.logf("✓ Connected to cLLMHub network\n")
-	p.logf("✓ Model %q published as %s (max concurrent: %d)\n", p.model, p.id, p.hubCfg.MaxConcurrent)
+	p.logf("✓ Model %q published as %s (slots: %d, ceiling: %d)\n", p.model, p.id, p.maxSlots, p.slotCeiling)
 	p.logf("✓ Listening for requests via WebSocket\n")
 
 	// Watch for token manager death and shut down the provider.
@@ -343,8 +375,14 @@ func (p *Provider) onModelServerDown() {
 				p.hub.SetTokenFunc(p.tokenMgr.AccessToken)
 			}
 
+			// Reset AIMD state: start conservative again after recovery.
 			p.mu.Lock()
 			p.modelServerUp = true
+			p.maxSlots = 1
+			p.hubCfg.MaxConcurrent = 1
+			p.consecutiveAtMax = 0
+			p.peakInflight = 0
+			p.resizeSlots(1)
 			p.mu.Unlock()
 
 			p.logf("✓ Model %q republished\n", p.model)
@@ -411,39 +449,75 @@ func (p *Provider) Stop() {
 	p.audit.Close()
 }
 
-// trackSuccessfulInflight records that `n` concurrent requests succeeded,
-// updating the peak observed concurrency.
+// trackSuccessfulInflight records that `n` concurrent requests succeeded.
+// If running at maxSlots and enough consecutive successes accumulate,
+// increases the slot count (additive increase).
 func (p *Provider) trackSuccessfulInflight(n int) {
 	p.mu.Lock()
 	if n > p.peakInflight {
 		p.peakInflight = n
 		p.logf("✓ Peak concurrent slots observed: %d\n", n)
 	}
+
+	// Only count toward ramp-up when actually running at capacity.
+	if n >= p.maxSlots && p.maxSlots < p.slotCeiling {
+		// Don't ramp up during cooldown after a reduction.
+		if time.Since(p.lastSlotReduction) < slotCooldown {
+			p.mu.Unlock()
+			return
+		}
+		p.consecutiveAtMax++
+		if p.consecutiveAtMax >= rampUpThreshold {
+			p.consecutiveAtMax = 0
+			newMax := p.maxSlots + 1
+			p.maxSlots = newMax
+			p.hubCfg.MaxConcurrent = newMax
+			p.resizeSlots(newMax)
+			p.mu.Unlock()
+
+			p.logf("✓ Increased max concurrent to %d (ceiling: %d)\n", newMax, p.slotCeiling)
+			if p.updateHubSlots != nil {
+				if err := p.updateHubSlots(newMax); err != nil {
+					p.logf("⚠ Failed to update hub with increased slots: %v\n", err)
+				}
+			}
+			return
+		}
+	}
 	p.mu.Unlock()
 }
 
-// reduceSlots lowers MaxConcurrent when a connection error occurs under
-// concurrency, using the peak successful inflight as the new limit.
+// reduceSlots halves MaxConcurrent when a connection error occurs under
+// concurrency (multiplicative decrease).
 func (p *Provider) reduceSlots(failedAt int) {
 	p.mu.Lock()
-	newMax := failedAt - 1
-	if p.peakInflight > 0 && p.peakInflight < newMax {
-		newMax = p.peakInflight
-	}
+	newMax := p.maxSlots / 2
 	if newMax < 1 {
 		newMax = 1
 	}
-	if newMax >= p.hubCfg.MaxConcurrent {
+	if newMax >= p.maxSlots {
 		p.mu.Unlock()
 		return
 	}
+	p.maxSlots = newMax
 	p.hubCfg.MaxConcurrent = newMax
+	p.consecutiveAtMax = 0
+	p.lastSlotReduction = time.Now()
+	p.resizeSlots(newMax)
 	p.mu.Unlock()
 
 	p.logf("⚠ Reduced max concurrent to %d (connection error at %d inflight)\n", newMax, failedAt)
-	if err := p.hub.UpdateMaxConcurrent(newMax); err != nil {
-		p.logf("⚠ Failed to update hub with reduced slots: %v\n", err)
+	if p.updateHubSlots != nil {
+		if err := p.updateHubSlots(newMax); err != nil {
+			p.logf("⚠ Failed to update hub with reduced slots: %v\n", err)
+		}
 	}
+}
+
+// resizeSlots replaces the semaphore channel with a new one of the given size.
+// Must be called with p.mu held.
+func (p *Provider) resizeSlots(size int) {
+	p.slots = make(chan struct{}, size)
 }
 
 // handleRequest processes incoming inference requests from the hub
@@ -468,6 +542,20 @@ func (p *Provider) handleRequest(req hub.RequestMsg) {
 		})
 		return
 	}
+
+	// Local semaphore: enforce max concurrent slots regardless of hub.
+	// Take a snapshot of the current semaphore under the lock so we
+	// use a consistent channel even if resizeSlots runs concurrently.
+	p.mu.Lock()
+	sem := p.slots
+	p.mu.Unlock()
+
+	select {
+	case sem <- struct{}{}:
+	case <-p.ctx.Done():
+		return
+	}
+	defer func() { <-sem }()
 
 	p.mu.Lock()
 	p.queueDepth++
@@ -631,7 +719,7 @@ func (p *Provider) Status() ProviderStatus {
 		Uptime:        int64(time.Since(p.startTime).Seconds()),
 		RequestCount:  p.requestCount,
 		QueueDepth:    p.queueDepth,
-		MaxConcurrent: p.hubCfg.MaxConcurrent,
+		MaxConcurrent: p.maxSlots,
 		GPUUtil:       0,
 		Timestamp:     time.Now(),
 	}

@@ -50,6 +50,7 @@ type PublishModelSpec struct {
 	BackendURL    string `json:"backend_url,omitempty"`     // override default backend URL
 	BackendAPIKey string `json:"backend_api_key,omitempty"`
 	Description   string `json:"description,omitempty"`
+	MaxConcurrent int    `json:"max_concurrent,omitempty"`  // optional ceiling hint for concurrent slots
 }
 
 // UnpublishRequest is the body for POST /api/unpublish.
